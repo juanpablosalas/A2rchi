@@ -85,7 +85,7 @@ class Chain() :
                 self._print_params("grading summary", grading_summary_model_name, model_class_map)
 
         else:
-            self.qa_prompt = PROMPTS["QA"]
+            self.qa_prompt = PROMPTS["QA_0"] #Default prompt is QA_0
             self.condense_question_prompt = PROMPTS["CONDENSE_QUESTION"]
             self.llm = model_class_map[model_name]["class"](**model_class_map[model_name]["kwargs"])
             

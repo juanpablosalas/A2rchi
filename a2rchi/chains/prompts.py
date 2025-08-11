@@ -6,10 +6,6 @@ from a2rchi.chains.utils.prompt_validator import ValidatedPromptTemplate
 config = Config_Loader().config["chains"]["prompts"]
 
 prompt_config = {
-    "QA": {
-        "path": config["MAIN_PROMPT"],
-        "input_variables": ["context", "question"],
-    },
     "CONDENSE_QUESTION": {
         "path": config["CONDENSING_PROMPT"],
         "input_variables": ["chat_history", "question"],
@@ -31,6 +27,14 @@ prompt_config = {
         "input_variables": ["submission_text", "rubric_text", "analysis"],
     }
 }
+
+prompt_config.update({
+    f"QA_{i}": {
+        "path": main_prompt_path,
+        "input_variables": ["context", "question"],
+    }
+    for i, main_prompt_path in enumerate(config["MAIN_PROMPT"].split(','))
+})
 
 def read_prompt(prompt_filepath: str) -> str:
 
