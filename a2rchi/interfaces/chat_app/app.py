@@ -1,4 +1,5 @@
 from a2rchi.chains.chain import Chain
+from a2rchi.chains.prompts import PROMPTS
 from a2rchi.utils.config_loader import load_config, CONFIG_PATH
 from a2rchi.utils.data_manager import DataManager
 from a2rchi.utils.env import read_secret
@@ -465,6 +466,7 @@ class FlaskAppWrapper(object):
         self.add_endpoint('/api/like', 'like', self.like,  methods=["POST"])
         self.add_endpoint('/api/dislike', 'dislike', self.dislike,  methods=["POST"])
         self.add_endpoint('/api/update_config', 'update_config', self.update_config, methods=["POST"])
+        self.add_endpoint('/api/get_prompts', 'get_prompts', self.get_prompts, methods=["GET"])
         
         # conditionally add ChromaDB endpoints based on config
         if self.chat_app_config.get('enable_debug_chroma_endpoints', False):
@@ -558,6 +560,17 @@ class FlaskAppWrapper(object):
         self.chat.update_config(self.config_id)
 
         return jsonify({'response': f'config updated successfully w/config_id: {self.config_id}'}), 200
+    
+    def get_prompts(self):
+        """
+        Gets the names of prompts used in the chain
+
+
+        Returns:
+            A json with a response list of the prompt names
+        """
+        prompt_names = list(PROMPTS.keys())
+        return jsonify({'options':prompt_names}), 200
 
 
     def get_chat_response(self):
