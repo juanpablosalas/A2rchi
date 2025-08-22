@@ -71,7 +71,7 @@ There are a few additional options you can pass to the `create` command that are
 
         # web pages of various people
         https://people.csail.mit.edu/kraska
-        ttps://physics.mit.edu/faculty/christoph-paus
+        https://physics.mit.edu/faculty/christoph-paus
     
     Then, include the file in the config:
     
@@ -119,6 +119,21 @@ Additional configuration options for the chatbot, deployed automatically with A2
 5. **`interfaces:chat_app:num_responses_until_feedback`**: Number of responses before the user is encouraged to provide feedback.
 
 6. **`interfaces:chat_app:flask_debug_mode`**: Boolean for whether to run the flask app in debug mode or not. Default is True.
+
+#### Git scraping
+
+In some cases, the RAG input may be documentations based on MKDocs git repositores. Instead of scraping these sites as regular HTML sites you can obtain the relevant content using the git scraper. To configure it, simply add the following field:
+
+**`utils:git:ENABLED:True`**
+In the input lists, make sure to prepend `git-` to the url of the repositories you are interested in scraping.
+
+        git-https://gitlab.cern.ch/cms-tier0-ops/documentation.git
+
+
+##### Git token
+
+You would need a git username and token for authenticating to the repositories you are interested in scraping (read only should work fine). Place your account username in `git_username.txt` and your token in `git_token.txt` in the secrets folder.
+
 
 #### JIRA
 
@@ -432,4 +447,42 @@ With a minimal configuration like that detailed above that is required for the g
 
 ```nohighlight
 a2rchi create --name grader --a2rchi-config configs/my_grading_config.yaml --podman --gpu --grader
+```
+
+### Stemming
+
+By specifying the option stemming within ones configuration, stemming functionality for the documents in A2rchi will be enabled. By doing so, documents inserted into the ragging pipeline, as well as the query that is matched with them, will be stemmed and simplified for faster and more accurate lookup. 
+
+```
+utils:
+  data_manager:
+    stemming:
+      ENABLED: true
+```
+
+### Ollama Interface 
+
+In order to use an Ollama server instance for the chatbot, it is possible to specify OllamaInterface for the model name. To then correctly use models on the Ollama server, in the keyword args, specify both the url of the server and the name of a model hosted on the server.
+use  
+
+```
+chains:
+  chain:
+    MODEL_NAME: OllamaInterface
+    MODEL_CLASS_MAP:
+      OllamaInterface:
+        kwargs:
+          base_model: "gemma3" # for instance 
+          url: "url-for-server" 
+
+```
+If needed it is also possible to specify the following arguments for your chatbot. For more information on the effects of these arguments, look at the ChatOllama documentation for the keyword arguments of the same name. 
+```
+num_ctx: 
+num_predict: 
+temperature:
+top_p: 
+top_k:
+num_gpu:
+repeat_penalty: 
 ```
