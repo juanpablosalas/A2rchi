@@ -1,5 +1,5 @@
 from a2rchi.chains.chain import Chain
-from a2rchi.chains.prompts import PROMPTS
+from a2rchi.chains.prompts import PROMPTS_DICTIONARY
 from a2rchi.utils.config_loader import load_config, CONFIG_PATH
 from a2rchi.utils.data_manager import DataManager
 from a2rchi.utils.env import read_secret
@@ -569,7 +569,7 @@ class FlaskAppWrapper(object):
         Returns:
             A json with a response list of the prompt names
         """
-        prompt_names = list(PROMPTS.keys())
+        prompt_names = list(PROMPTS_DICTIONARY.values())
         return jsonify({'options':prompt_names}), 200
 
 

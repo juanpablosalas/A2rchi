@@ -56,3 +56,8 @@ PROMPTS = {
     )
     for name, info in prompt_config.items() if info["path"] != ""
 }
+
+PROMPTS_DICTIONARY = {
+    name: info["path"].split('/')[-1].replace('.prompt','').lower()
+    for name, info in prompt_config.items() if info["path"] != ""
+}
