@@ -11,6 +11,7 @@ from src.a2rchi.pipelines.agents.tools import (
     create_file_search_tool,
     create_metadata_search_tool,
     create_retriever_tool,
+    create_mcp_ping_tool,
 )
 from src.a2rchi.pipelines.agents.utils.history_utils import infer_speaker
 from src.data_manager.collectors.utils.index_utils import CatalogService
@@ -65,7 +66,10 @@ class CMSCompOpsAgent(BaseAgent):
             ),
             store_docs=self._store_documents,
         )
-        return [file_search_tool, metadata_search_tool]
+
+        mcp_tool = create_mcp_ping_tool(server_url="http://submit76.mit.edu:7760/sse")
+
+        return [file_search_tool, metadata_search_tool, mcp_tool]
 
     def _store_documents(self, stage: str, docs: Sequence[Document]) -> None:
         """Centralised helper used by tools to record documents into the active memory."""
@@ -89,10 +93,10 @@ class CMSCompOpsAgent(BaseAgent):
 
     def _prepare_agent_inputs(self, **kwargs) -> Dict[str, Any]:
         """Prepare agent state and formatted inputs shared by invoke/stream."""
-        
+
         # event-level memory (which documents were retrieved)
         memory = self.start_run_memory()
-       
+
         # refresh vs connection
         vectorstore = kwargs.get("vectorstore")
         if vectorstore:
@@ -123,7 +127,7 @@ class CMSCompOpsAgent(BaseAgent):
         """Instantiate or refresh the vectorstore retriever tool using hybrid retrieval."""
         retrievers_cfg = self.dm_config.get("retrievers", {})
         hybrid_cfg = retrievers_cfg.get("hybrid_retriever", {})
-        
+
         k = hybrid_cfg["num_documents_to_retrieve"]
         bm25_weight = hybrid_cfg["bm25_weight"]
         semantic_weight = hybrid_cfg["semantic_weight"]
