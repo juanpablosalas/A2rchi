@@ -29,7 +29,8 @@ class ScraperManager:
         selenium_config = links_config.get("selenium_scraper", {}) if isinstance(sources_config, dict) else {}
 
         git_config = sources_config.get("git", {}) if isinstance(sources_config, dict) else {}
-        self.base_depth = links_config.get('base_source_depth', 1)
+        self.base_depth = links_config.get('base_source_depth', 5)
+        logger.debug(f"Using base depth of {self.base_depth} for weblist URLs")
 
         scraper_config = {}
         if isinstance(links_config, dict):
@@ -37,6 +38,13 @@ class ScraperManager:
         if not scraper_config:
             scraper_config = utils_config.get("html_scraper", {}) or {}
         self.config = scraper_config
+        raw_max_pages = links_config.get("max_pages")
+        self.max_pages = None
+        if raw_max_pages not in (None, ""):
+            try:
+                self.max_pages = int(raw_max_pages)
+            except (TypeError, ValueError):
+                logger.warning(f"Invalid max_pages value {raw_max_pages}; ignoring.")
 
         self.links_enabled = links_config.get("enabled", True)
         self.git_enabled = git_config.get("enabled", False)
@@ -156,7 +164,13 @@ class ScraperManager:
             use_client_for_scraping: bool = False,
     ) -> None:
         try:
-            for resource in self.web_scraper.crawl(url, browserclient=client, max_depth=max_depth, selenium_scrape=use_client_for_scraping):
+            for resource in self.web_scraper.crawl_iter(
+                url,
+                browserclient=client,
+                max_depth=max_depth,
+                selenium_scrape=use_client_for_scraping,
+                max_pages=self.max_pages,
+            ):
                 persistence.persist_resource(
                     resource, websites_dir
                 )
@@ -177,7 +191,6 @@ class ScraperManager:
                 if len(url_depth) == 2 : 
                     stripped = url_depth[0]
                     depth = url_depth[1]
-
                 urls.append((stripped, depth))
         return urls
 

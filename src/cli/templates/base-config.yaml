@@ -149,7 +149,8 @@ data_manager:
       bm25_b: {{ data_manager.retrievers.hybrid_retriever.bm25_b | default(0.75, true) }}
   sources:
     links:
-      base_source_depth: {{ datamanager.sources.links.base_source_depth | default(1, true) }}
+      base_source_depth: {{ data_manager.sources.links.base_source_depth | default(1, true) }}
+      max_pages: {{ data_manager.sources.links.max_pages | default(null, true) }}
       enabled: {{ data_manager.sources.links.enabled | default(true, true) }}
       visible: {{ data_manager.sources.links.visible | default(true, true) }}
       input_lists:
