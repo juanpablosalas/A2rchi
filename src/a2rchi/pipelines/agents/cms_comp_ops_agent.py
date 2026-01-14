@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Sequence
 
 from langchain_core.documents import Document
+import asyncio
+import nest_asyncio
 
 from src.utils.logging import get_logger
 from src.a2rchi.pipelines.agents.base import BaseAgent
@@ -11,7 +13,7 @@ from src.a2rchi.pipelines.agents.tools import (
     create_file_search_tool,
     create_metadata_search_tool,
     create_retriever_tool,
-    create_mcp_ping_tool,
+    initialize_mcp_client,
 )
 from src.a2rchi.pipelines.agents.utils.history_utils import infer_speaker
 from src.data_manager.collectors.utils.index_utils import CatalogService
@@ -30,6 +32,7 @@ class CMSCompOpsAgent(BaseAgent):
     ) -> None:
         super().__init__(config, *args, **kwargs)
 
+        self.mcp_client = None
         self.catalog_service = CatalogService(
             data_path=self.config["global"]["DATA_PATH"]
         )
@@ -67,9 +70,37 @@ class CMSCompOpsAgent(BaseAgent):
             store_docs=self._store_documents,
         )
 
-        mcp_tool = create_mcp_ping_tool(server_url="http://submit76.mit.edu:7760/sse")
 
-        return [file_search_tool, metadata_search_tool, mcp_tool]
+        all_tools = [file_search_tool, metadata_search_tool]
+
+        try:
+            nest_asyncio.apply()
+
+            # 1. Fetch the tools (async)
+            client, mcp_tools = asyncio.run(initialize_mcp_client())
+            self.mcp_client = client  # Keep client alive
+
+            # 2. Patch tools to support synchronous execution
+            # This wrapper allows the sync agent to call the async tools
+            def make_synchronous(async_tool):
+                def sync_wrapper(*args, **kwargs):
+                    # We reuse the existing client session via the closure of the original tool
+                    return asyncio.run(async_tool.coroutine(*args, **kwargs))
+
+                # Assign the wrapper to the tool's 'func' attribute (standard LangChain sync entry point)
+                async_tool.func = sync_wrapper
+                return async_tool
+
+            # Apply the patch to all fetched tools
+            if mcp_tools:
+                synchronous_mcp_tools = [make_synchronous(t) for t in mcp_tools]
+                all_tools.extend(synchronous_mcp_tools)
+                logger.info(f"Loaded and patched {len(synchronous_mcp_tools)} MCP tools for sync execution.")
+
+        except Exception as e:
+            logger.error(f"Failed to load MCP tools: {e}", exc_info=True)
+
+        return all_tools
 
     def _store_documents(self, stage: str, docs: Sequence[Document]) -> None:
         """Centralised helper used by tools to record documents into the active memory."""
