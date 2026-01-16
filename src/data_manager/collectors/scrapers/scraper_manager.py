@@ -239,12 +239,12 @@ class ScraperManager:
         return link_urls, git_urls, sso_urls
     def _resolve_scraper(self):
         class_name = self.selenium_config.get("selenium_class")
-        class_map = self.selenium_config.get("selenium_class_map", "")
+        class_map = self.selenium_config.get("selenium_class_map", {})
 
         entry = class_map.get(class_name)
 
         if not entry: 
-            logger.error("Selenium class {class_name} is not defined in the configuration")
+            logger.error(f"Selenium class {class_name} is not defined in the configuration")
             return None, {}
 
         scraper_class = entry.get("class")
