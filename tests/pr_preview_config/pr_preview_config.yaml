@@ -7,6 +7,12 @@ services:
     port: 27861
     external_port: 27861
     trained_on: "Dummy data for preview"
+  chromadb:
+    host: chromadb
+    external_port: 8123
+  data_manager:
+    port: 78721
+    external_port: 78721
 
 data_manager:
   embedding_name: HuggingFaceEmbeddings
