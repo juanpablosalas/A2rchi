@@ -7,7 +7,7 @@ from src.data_manager.collectors.persistence import PersistenceService
 from src.data_manager.collectors.scrapers.scraped_resource import \
     ScrapedResource
 from src.data_manager.collectors.scrapers.scraper import LinkScraper
-from src.utils.config_loader import load_global_config, load_utils_config
+from src.utils.config_loader import load_global_config
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
