@@ -7,8 +7,6 @@ from urllib.parse import urlparse, urljoin, urldefrag
 
 from src.data_manager.collectors.scrapers.scraped_resource import \
     ScrapedResource
-from src.data_manager.collectors.scrapers.scraped_resource import \
-    ScrapedResource
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -54,27 +52,26 @@ class LinkScraper:
 
         if selenium_scrape: # deals with a selenium response (should work for both non authenitcated and authenticated sites in principle)
             assert(authenticator is not None) ## this shouldnt be tripped
-            artifacts = response.artifacts
-            links = response.links
-
-            res = []
-
-            for artifact, link in zip(artifacts, links):
-                content = artifact.get("content")
-                self._mark_visited(link)
-                resource = ScrapedResource(
-                        url = link,
-                        content = content, 
-                        suffix=response.get("suffix", "html"),
-                        source_type = source_type,
-                        metadata={ # later we might change this if we want more constructive metadata but for now this works 
-                            "title": response.get("title"),
-                            "content_type": "rendered_html",
-                            "renderer": "selenium",
-                            },
-                        )
-                res += authenticator.get_links_with_same_hostname(current_url)
-                resources.append(resource)
+            
+            # For selenium scraping, we expect a simple dict from extract_page_data
+            # containing url, title, content, suffix
+            content = response.get("content", "")
+            title = response.get("title", "")
+            suffix = response.get("suffix", "html")
+            
+            resource = ScrapedResource(
+                url=current_url,
+                content=content, 
+                suffix=suffix,
+                source_type=source_type,
+                metadata={
+                    "title": title,
+                    "content_type": "rendered_html",
+                    "renderer": "selenium",
+                },
+            )
+            res = authenticator.get_links_with_same_hostname(current_url)
+            resources.append(resource)
                 
         else: # deals with http response
             content_type = response.headers.get("Content-type")
