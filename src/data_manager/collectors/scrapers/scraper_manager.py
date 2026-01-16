@@ -51,6 +51,7 @@ class ScraperManager:
         self.selenium_config = selenium_config or {}
         self.selenium_enabled = self.selenium_config.get("enabled", False)
         self.scrape_with_selenium = self.selenium_config.get("use_for_scraping", False)
+        self.sso_enabled = self.selenium_enabled  # SSO uses selenium for authentication
 
         self.data_path = Path(global_config["DATA_PATH"])
         self.input_lists = links_config.get("input_lists", [])
@@ -150,56 +151,67 @@ class ScraperManager:
         persistence: PersistenceService,
         websites_dir: Path,
     ) -> None:
-        for url in urls:
-            self._handle_standard_url(url, persistence, websites_dir)
-
-        # authenticator is not made a class variable here because we mgiht want to use multiple in the future
-        # initialize only once and use it for all scrapes in a batch 
+        # Initialize authenticator if selenium is enabled
         authenticator = None
         if self.selenium_enabled:
             authenticator_class, kwargs = self._resolve_scraper()
-            authenticator = authenticator_class(**kwargs)
+            if authenticator_class is not None:
+                authenticator = authenticator_class(**kwargs)
 
-        for raw_url, depth in self.collect_urls_from_lists():
-            if raw_url.startswith("git-"):
-                git_urls.append(raw_url.split("git-", 1)[1])
-                continue
+        try:
+            for url in urls:
+                # For standard link collection, don't use selenium for scraping
+                # (SSO urls are handled separately via collect_sso)
+                self._handle_standard_url(
+                    url, 
+                    persistence, 
+                    websites_dir, 
+                    max_depth=self.base_depth,
+                    client=None,
+                    use_client_for_scraping=False
+                )
+        finally:
+            if authenticator is not None:
+                authenticator.close()  # Close the authenticator properly and free the resources
 
-            selenium_client = authenticator if self.scrape_with_selenium else None
+    def _collect_sso_from_urls(
+        self,
+        urls: List[str],
+        persistence: PersistenceService,
+        sso_dir: Path,
+    ) -> None:
+        """Collect SSO-protected URLs using selenium for authentication."""
+        authenticator = None
+        if self.selenium_enabled:
+            authenticator_class, kwargs = self._resolve_scraper()
+            if authenticator_class is not None:
+                authenticator = authenticator_class(**kwargs)
+        
+        if authenticator is None:
+            logger.error("SSO collection requires selenium to be enabled")
+            return
 
-            url = raw_url
-            if raw_url.startswith("sso-"):
-                url = raw_url.split("sso-", 1)[1]
+        try:
+            for url in urls:
+                # For SSO URLs, use selenium client for authentication
+                # scrape_with_selenium determines if we use selenium for scraping too
+                self._handle_standard_url(
+                    url,
+                    persistence,
+                    sso_dir,
+                    max_depth=self.base_depth,
+                    client=authenticator,
+                    use_client_for_scraping=self.scrape_with_selenium
+                )
+        finally:
+            if authenticator is not None:
+                authenticator.close()
 
-                # Now the selenium client is still necessary for the auth regardless
-                selenium_client = authenticator
-
-            self._handle_standard_url(url, persistence, websites_dir, depth, selenium_client, self.scrape_with_selenium)
-
-        if authenticator is not None: 
-            authenticator.close() # close the authenticator properly and free the resources
-
-        if self.git_enabled and git_urls:
-            if self.config.get("reset_data", False):
-                persistence.reset_directory(self.git_dir)
-            git_resources = self._collect_git_resources(
-                git_urls, persistence
-            )
-            logger.debug(f"Git scraping produced {len(git_resources)} resources")
-        elif git_urls:
-            logger.warning("Git URLs detected but git source is disabled; skipping git scraping")
-
-    def _collect_sso_resources(self, urls: List[str]) -> List[ScrapedResource]:
-        resources: List[ScrapedResource] = []
-        for url in urls:
-            resources.extend(self.sso_collector.collect(url))
-        return resources
-
-    def _collect_urls_from_lists(self, input_lists) -> List[tuple[str, int]]:
+    def _collect_urls_from_lists(self, input_lists) -> List[str]:
         """Collect URLs from the configured weblists."""
         # Handle case where input_lists might be None
-        urls: List[tuple[str, int]] = []
-        if not self.input_lists:
+        urls: List[str] = []
+        if not input_lists:
             return urls
         for list_name in input_lists:
             list_path = Path("weblists") / Path(list_name).name
@@ -239,7 +251,7 @@ class ScraperManager:
         if isinstance(scraper_class, str):
             module_name = entry.get(
                     "module", 
-                    "src.data_manager.collectors.scrapers.links.selenium_scraper",
+                    "src.data_manager.collectors.scrapers.integrations.sso_scraper",
                     )
             module = importlib.import_module(module_name)
             scraper_class = getattr(module, scraper_class)
@@ -269,21 +281,18 @@ class ScraperManager:
         except Exception as exc:
             logger.error(f"Failed to scrape {url}: {exc}")
 
-    def _extract_urls_from_file(self, path: Path) -> List[tuple[str, int]]:
+    def _extract_urls_from_file(self, path: Path) -> List[str]:
+        """Extract URLs from file, ignoring depth specifications for now."""
         urls: List[str] = []
         with path.open("r") as file:
             for line in file:
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
-                # check if a depth was specified  for crawling if not make it 1
+                # Extract just the URL part, ignoring depth specification if present
                 url_depth = stripped.split(",")
-
-                depth = self.base_depth # default
-                if len(url_depth) == 2 : 
-                    stripped = url_depth[0]
-                    depth = url_depth[1]
-                urls.append((stripped, depth))
+                url = url_depth[0].strip()
+                urls.append(url)
         return urls
 
     def _collect_git_resources(
