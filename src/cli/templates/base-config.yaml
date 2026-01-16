@@ -112,7 +112,7 @@ services:
     flask_debug_mode: {{ services.grader_app.flask_debug_mode | default(true, false) }}
   chromadb:
     use_HTTP_chromadb_client: {{ services.chromadb.use_HTTP_chromadb_client | default(true, true) }}
-    chromadb_host: {{ 'localhost' if host_mode else (services.chromadb.host | default('chromadb', true)) }}
+    host: {{ 'localhost' if host_mode else (services.chromadb.host | default('chromadb', true)) }}
     port: {{ services.chromadb.port | default(8000, true) }}
     external_port: {{ services.chromadb.external_port | default(8000, true) }}
     local_vstore_path: "{{ services.chromadb.local_vstore_path | default('/root/data/vstore/', true) }}"

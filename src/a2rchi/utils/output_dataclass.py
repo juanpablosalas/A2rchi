@@ -25,6 +25,9 @@ class PipelineOutput:
     final: bool = True
     """Indicates whether this object represents the terminal payload in a stream of outputs."""
 
+    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    """Records of any tool calls made during the pipeline or agent execution."""
+
     def __getitem__(self, key: str) -> Any:
         return self.to_dict()[key]
 

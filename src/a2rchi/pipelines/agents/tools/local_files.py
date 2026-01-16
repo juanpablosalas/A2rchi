@@ -88,11 +88,35 @@ class RemoteCatalogClient:
         return {"Authorization": f"Bearer {self.api_token}"}
 
     def search(
-        self, query: str, *, limit: int = 5, search_content: bool = True
+        self,
+        query: str,
+        *,
+        limit: int = 5,
+        search_content: bool = True,
+        regex: bool = False,
+        case_sensitive: bool = False,
+        max_matches_per_file: Optional[int] = None,
+        before: int = 0,
+        after: int = 0,
+        mode: Optional[str] = None,
     ) -> List[Dict[str, object]]:
+        params: Dict[str, object] = {
+            "q": query,
+            "limit": limit,
+            "search_content": str(search_content).lower(),
+        }
+        if mode:
+            params["mode"] = mode
+        if search_content:
+            params["regex"] = str(regex).lower()
+            params["case_sensitive"] = str(case_sensitive).lower()
+            params["before"] = before
+            params["after"] = after
+            if max_matches_per_file is not None:
+                params["max_matches_per_file"] = max_matches_per_file
         resp = requests.get(
             f"{self.base_url}/api/catalog/search",
-            params={"q": query, "limit": limit, "search_content": str(search_content).lower()},
+            params=params,
             headers=self._headers(),
             timeout=self.timeout,
         )
@@ -141,6 +165,39 @@ def _format_files_for_llm(hits: List[Tuple[str, Path, Optional[Dict[str, object]
     return "\n\n".join(lines)
 
 
+def _format_grep_hits(hits: List[Dict[str, object]]) -> str:
+    if not hits:
+        return "No local files matched that search query."
+    lines: List[str] = []
+    for idx, item in enumerate(hits, start=1):
+        resource_hash = item.get("hash")
+        path = item.get("path", "")
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        display_name = metadata.get("display_name") or ""
+        source_type = metadata.get("source_type") or ""
+        meta_line = " ".join(part for part in [source_type, display_name] if part)
+        lines.append(f"[{idx}] {path} (hash={resource_hash})")
+        if meta_line:
+            lines.append(f"Meta: {meta_line}")
+        matches = item.get("matches") if isinstance(item.get("matches"), list) else []
+        if matches:
+            for match in matches:
+                line_no = match.get("line", "?")
+                text = (match.get("text") or "").strip()
+                lines.append(f"L{line_no}: {text}")
+                before_lines = match.get("before") if isinstance(match.get("before"), list) else []
+                after_lines = match.get("after") if isinstance(match.get("after"), list) else []
+                for ctx in before_lines:
+                    lines.append(f"B: {ctx}")
+                for ctx in after_lines:
+                    lines.append(f"A: {ctx}")
+        else:
+            snippet = item.get("snippet") or ""
+            if snippet:
+                lines.append(f"Snippet: {snippet.strip()}")
+    return "\n".join(lines)
+
+
 def _collect_snippet(text: str, match: re.Match, *, window: int = 240) -> str:
     start = max(match.start() - window, 0)
     end = min(match.end() + window, len(text))
@@ -162,9 +219,11 @@ def create_file_search_tool(
     """Create a LangChain tool that performs keyword search in catalogued files."""
 
     _default_description = (
-        "Search the locally stored source documents (text, markdown, csv, html, pdf)."
-        "Provide a regex search query and the tool will return matching files, text snippets,"
-        "and a unique hash for each file."
+        "Grep-like search over local document contents only (not filenames/paths).\n"
+        "Input: query (string), regex=false, case_sensitive=false, max_results_override=None, "
+        "max_matches_per_file=3, before=0, after=0.\n"
+        "Output: lines grouped by file with hash/path and matching line numbers, plus context lines.\n"
+        "Example input: \"timeout error\" (regex=false)."
     )
     tool_description = (
         description
@@ -172,33 +231,48 @@ def create_file_search_tool(
     )
 
     @tool(name, description=tool_description)
-    def _search_local_files(query: str) -> str:
+    def _search_local_files(
+        query: str,
+        regex: bool = False,
+        case_sensitive: bool = False,
+        max_results_override: Optional[int] = None,
+        max_matches_per_file: int = 3,
+        before: int = 0,
+        after: int = 0,
+    ) -> str:
         if not query.strip():
             return "Please provide a non-empty search query."
 
-        pattern = re.compile(re.escape(query.strip()), re.IGNORECASE)
-        hits: List[Tuple[str, Path, Optional[Dict[str, object]], str]] = []
+        hits: List[Dict[str, object]] = []
         docs: List[Document] = []
+        limit = max_results_override or max_results
 
         try:
-            results = catalog.search(query.strip(), limit=max_results, search_content=True)
+            results = catalog.search(
+                query.strip(),
+                limit=limit,
+                search_content=True,
+                regex=regex,
+                case_sensitive=case_sensitive,
+                max_matches_per_file=max_matches_per_file,
+                before=before,
+                after=after,
+                mode="grep",
+            )
         except Exception as exc:
             logger.warning("Catalog search failed: %s", exc)
             return "Catalog search failed."
 
         for item in results:
-            resource_hash = item.get("hash")
-            path = Path(item.get("path", "")) if item.get("path") else Path("")
-            metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-            snippet = item.get("snippet") or ""
-            hits.append((resource_hash, path, metadata, snippet))
+            hits.append(item)
 
         if store_docs and hits:
-            for resource_hash, path, metadata, _ in hits:
+            for item in hits:
                 try:
+                    resource_hash = item.get("hash")
                     doc_payload = catalog.get_document(resource_hash, max_chars=4000) or {}
                     text = doc_payload.get("text") or ""
-                    doc_meta = doc_payload.get("metadata") or metadata or {}
+                    doc_meta = doc_payload.get("metadata") or item.get("metadata") or {}
                     docs.append(Document(page_content=text, metadata=doc_meta))
                 except Exception:
                     continue
@@ -206,7 +280,7 @@ def create_file_search_tool(
         if store_docs:
             store_docs(f"{name}: {query}", docs)
 
-        return _format_files_for_llm(hits)
+        return _format_grep_hits(hits)
 
     return _search_local_files
 
@@ -234,7 +308,15 @@ def create_metadata_search_tool(
 
     tool_description = (
         description
-        or "Search the metadata entries associated with the local document catalog."
+        or (
+            "Search metadata for locally stored documents (use this to find files by name/path).\n"
+            "Input: query string with optional key:value filters; use OR between filters.\n"
+            "Important: key:value filters are exact matches (ANDed within a group, OR across groups).\n"
+            "Use free-text for filename/path contains searches (e.g., \"mz_dilepton.py\").\n"
+            "Examples: \"mz_dilepton.py\" or \"relative_path:full/path/to/mz_dilepton.py\" "
+            "or \"display_name:foo.py OR relative_path:bar/foo.py\".\n"
+            "Output: list of matches with hash, path, metadata, and a short snippet."
+        )
     )
 
     @tool(name, description=tool_description)
@@ -278,9 +360,57 @@ def create_metadata_search_tool(
     return _search_metadata
 
 
+def create_document_fetch_tool(
+    catalog: RemoteCatalogClient,
+    *,
+    name: str = "fetch_catalog_document",
+    description: Optional[str] = None,
+    default_max_chars: int = 4000,
+) -> Callable[..., str]:
+    """Create a LangChain tool to fetch a full document by resource hash."""
+
+    tool_description = (
+        description
+        or (
+            "Fetch a catalog document by resource hash after a search hit.\n"
+            "Input: resource_hash (string), max_chars=4000.\n"
+            "Output: path, metadata, and document text (truncated).\n"
+            "Example input: \"abcd1234\"."
+        )
+    )
+
+    @tool(name, description=tool_description)
+    def _fetch_document(resource_hash: str, max_chars: int = default_max_chars) -> str:
+        if not resource_hash.strip():
+            return "Please provide a non-empty resource hash."
+
+        try:
+            doc_payload = catalog.get_document(resource_hash.strip(), max_chars=max_chars) or {}
+        except Exception as exc:
+            logger.warning("Document fetch failed: %s", exc)
+            return "Document fetch failed."
+
+        if not doc_payload:
+            return "Document not found."
+
+        path = doc_payload.get("path") or ""
+        metadata = doc_payload.get("metadata") if isinstance(doc_payload.get("metadata"), dict) else {}
+        text = doc_payload.get("text") or ""
+        meta_preview = _render_metadata_preview(metadata)
+
+        return (
+            f"Path: {path}\n"
+            f"Metadata:\n{meta_preview}\n\n"
+            f"Content:\n{text}"
+        )
+
+    return _fetch_document
+
+
 __all__ = [
     "RemoteCatalogClient",
     "create_retriever_tool",
     "create_file_search_tool",
     "create_metadata_search_tool",
+    "create_document_fetch_tool",
 ]

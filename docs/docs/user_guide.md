@@ -50,6 +50,7 @@ In addition to the required `--name`, `--config/--config-dir`, `--env-file`, and
 7. **`--force`** / **`--dry-run`**: Force recreation of an existing deployment and/or show what would happen without actually deploying.
 
 You can inspect the available services and sources, together with descriptions, using `a2rchi list-services`.
+The CLI checks that host ports are free before deploying; if a port is already in use, adjust `services.*.external_port` (or `services.*.port` in `--hostmode`) and retry.
 
 > **GPU helpers**
 >

@@ -19,7 +19,8 @@ def _collect_local_paths(config: dict) -> Tuple[bool, List[Path]]:
     collected: List[Path] = []
     for entry in raw_paths:
         try:
-            collected.append(Path(entry).expanduser())
+            path = Path(entry).expanduser()
+            collected.append(path.resolve(strict=False))
         except TypeError:
             logger.warning("Skipping invalid local_files path entry: %r", entry)
     return enabled, collected
