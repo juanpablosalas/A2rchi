@@ -34,8 +34,6 @@ class ScraperManager:
         scraper_config = {}
         if isinstance(links_config, dict):
             scraper_config = links_config.get("html_scraper", {}) or {}
-        if not scraper_config:
-            scraper_config = utils_config.get("html_scraper", {}) or {}
         self.config = scraper_config
         raw_max_pages = links_config.get("max_pages")
         self.max_pages = None
