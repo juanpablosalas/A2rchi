@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM localhost/a2rchi/a2rchi-python-base:1.2.4
+FROM --platform=linux/amd64 docker.io/a2rchi/a2rchi-python-base:latest
 RUN mkdir -p /root/A2rchi
 WORKDIR /root/A2rchi
 

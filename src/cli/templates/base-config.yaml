@@ -170,6 +170,8 @@ data_manager:
         - {{ path }}
         {%- endfor %}
     links:
+      base_source_depth: {{ data_manager.sources.links.base_source_depth | default(1, true) }}
+      max_pages: {{ data_manager.sources.links.max_pages | default(null, true) }}
       enabled: {{ data_manager.sources.links.enabled | default(true, true) }}
       visible: {{ data_manager.sources.links.visible | default(true, true) }}
       schedule: '{{ data_manager.sources.links.schedule | default("", true) }}'
@@ -178,10 +180,20 @@ data_manager:
         {%- for input_list in link_lists %}
         - {{ input_list }}
         {%- endfor %}
-      scraper:
-        reset_data: {{ data_manager.sources.links.scraper.reset_data | default(true, true) }}
-        verify_urls: {{ data_manager.sources.links.scraper.verify_urls | default(false, true) }}
-        enable_warnings: {{ data_manager.sources.links.scraper.enable_warnings | default(false, true) }}
+      html_scraper:
+        reset_data: {{ data_manager.sources.links.html_scraper.reset_data | default(true, true) }}
+        verify_urls: {{ data_manager.sources.links.html_scraper.verify_urls | default(false, true) }}
+        enable_warnings: {{ data_manager.sources.links.html_scraper.enable_warnings | default(false, true) }}
+      selenium_scraper:
+        enabled: {{ data_manager.sources.links.selenium_scraper.selenium_scraper.enabled | default(false, True) }}
+        visible: {{ data_manager.sources.links.selenium_scraper.selenium_scraper.visible | default(false, true) }}
+        use_for_scraping: {{ data_manager.sources.links.selenium_scraper.use_for_scraping | default(false, true) }}
+        selenium_class: {{  data_manager.sources.links.selenium_scraper.selenium_class | default('CERNSSOAuthenticator', true)  }}
+        selenium_class_map: 
+          CERNSSOAuthenticator: 
+            class: {{ data_manager.sources.links.selenium_scraper.selenium_class_map.CERNSSOAuthenticator.class | default('CERNSSOAuthenticator', true) }}
+            kwargs:
+              headless:  {{ data_manager.sources.links.selenium_scraper.selenium_class_map.CERNSSOAuthenticator.kwargs.headless | default(true, true) }}
     git:
       enabled: {{ data_manager.sources.git.enabled | default(true, true) }}
       visible: {{ data_manager.sources.git.visible | default(true, true) }}

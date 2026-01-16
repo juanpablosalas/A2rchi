@@ -132,9 +132,9 @@ def main() -> None:
     app.add_url_rule("/api/ingestion/status", "ingestion_status", get_ingestion_status, methods=["GET"])
 
     uploader.run(
-        debug=data_manager_cfg.get("flask_debug_mode", False),
-        port=data_manager_cfg.get("port", 7871),
-        host=data_manager_cfg.get("host", "0.0.0.0"),
+        debug=data_manager_cfg["flask_debug_mode"],
+        port=data_manager_cfg["port"],
+        host=data_manager_cfg["host"],
     )
 
 
