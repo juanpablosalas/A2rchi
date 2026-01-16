@@ -131,17 +131,17 @@ class ScraperManager:
         Scheduled collection of link sources.
         For now, this behaves the same as a full collection, overriding last_run depending on the persistence layer.
         """
-        metadata = self.persistence.catalog.get_metadata_by_filter("source_type", source_type="links", metadata_keys=["url"])
+        metadata = persistence.catalog.get_metadata_by_filter("source_type", source_type="links", metadata_keys=["url"])
         catalog_urls = [m[1].get("url", "") for m in metadata]
         self.collect_links(persistence, link_urls=catalog_urls)
 
     def schedule_collect_git(self, persistence: PersistenceService, last_run: Optional[str] = None) -> None:
-        metadata = self.persistence.catalog.get_metadata_by_filter("source_type", source_type="git", metadata_keys=["url"])
+        metadata = persistence.catalog.get_metadata_by_filter("source_type", source_type="git", metadata_keys=["url"])
         catalog_urls = [m[1].get("url", "") for m in metadata]
         self.collect_git(persistence, git_urls=catalog_urls)
 
     def schedule_collect_sso(self, persistence: PersistenceService, last_run: Optional[str] = None) -> None:
-        metadata = self.persistence.catalog.get_metadata_by_filter("source_type", source_type="sso", metadata_keys=["url"])
+        metadata = persistence.catalog.get_metadata_by_filter("source_type", source_type="sso", metadata_keys=["url"])
         catalog_urls = [m[1].get("url", "") for m in metadata]
         self.collect_sso(persistence, sso_urls=catalog_urls)
 
