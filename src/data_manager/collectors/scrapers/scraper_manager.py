@@ -69,8 +69,7 @@ class ScraperManager:
         self, persistence: PersistenceService
     ) -> None:
         """Run the configured scrapers and persist their output."""
-        input_lists = self.config.get("input_lists", [])
-        link_urls, git_urls, sso_urls = self._collect_urls_from_lists_by_type(input_lists)
+        link_urls, git_urls, sso_urls = self._collect_urls_from_lists_by_type(self.input_lists)
 
         self.collect_links(persistence, link_urls=link_urls)
         self.collect_sso(persistence, sso_urls=sso_urls)
@@ -149,7 +148,7 @@ class ScraperManager:
         self,
         urls: List[str],
         persistence: PersistenceService,
-        websites_dir: Path,
+        output_dir: Path,
     ) -> None:
         # Initialize authenticator if selenium is enabled
         authenticator = None
@@ -165,7 +164,7 @@ class ScraperManager:
                 self._handle_standard_url(
                     url, 
                     persistence, 
-                    websites_dir, 
+                    output_dir, 
                     max_depth=self.base_depth,
                     client=None,
                     use_client_for_scraping=False
@@ -178,7 +177,7 @@ class ScraperManager:
         self,
         urls: List[str],
         persistence: PersistenceService,
-        sso_dir: Path,
+        output_dir: Path,
     ) -> None:
         """Collect SSO-protected URLs using selenium for authentication."""
         authenticator = None
@@ -198,7 +197,7 @@ class ScraperManager:
                 self._handle_standard_url(
                     url,
                     persistence,
-                    sso_dir,
+                    output_dir,
                     max_depth=self.base_depth,
                     client=authenticator,
                     use_client_for_scraping=self.scrape_with_selenium
@@ -262,7 +261,7 @@ class ScraperManager:
             self, 
             url: str, 
             persistence: PersistenceService, 
-            websites_dir: Path, 
+            output_dir: Path, 
             max_depth: int, 
             client=None, 
             use_client_for_scraping: bool = False,
@@ -276,7 +275,7 @@ class ScraperManager:
                 max_pages=self.max_pages,
             ):
                 persistence.persist_resource(
-                    resource, websites_dir
+                    resource, output_dir
                 )
         except Exception as exc:
             logger.error(f"Failed to scrape {url}: {exc}")
