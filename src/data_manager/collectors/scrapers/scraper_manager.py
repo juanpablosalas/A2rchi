@@ -195,7 +195,7 @@ class ScraperManager:
             resources.extend(self.sso_collector.collect(url))
         return resources
 
-    def collect_urls_from_lists(self) -> List[tuple[str, int]]:
+    def _collect_urls_from_lists(self, input_lists) -> List[tuple[str, int]]:
         """Collect URLs from the configured weblists."""
         # Handle case where input_lists might be None
         urls: List[tuple[str, int]] = []
