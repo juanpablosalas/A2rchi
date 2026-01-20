@@ -1,4 +1,5 @@
 import copy
+from importlib import resources
 import shutil
 import subprocess
 from pathlib import Path
@@ -13,6 +14,16 @@ from src.cli.utils.service_builder import ServiceBuilder
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+TEMPLATE_COMPARISON_PATHS = (
+    "base-config.yaml",
+    "base-compose.yaml",
+    "base-init.sql",
+    "grafana/datasources.yaml",
+    "grafana/dashboards.yaml",
+    "grafana/a2rchi-default-dashboard.json",
+    "grafana/grafana.ini",
+)
 
 def check_docker_available() -> bool:
     """Check if Docker is available and not just Podman emulation."""
@@ -63,6 +74,63 @@ def parse_services_option(ctx, param, value):
         )
     
     return services
+
+def _read_installed_template(pkg_root, rel_path: str) -> Optional[bytes]:
+    try:
+        target = pkg_root.joinpath(rel_path)
+        if not target.is_file():
+            return None
+        return target.read_bytes()
+    except Exception:
+        return None
+
+def _read_repo_template(repo_templates_dir: Path, rel_path: str) -> Optional[bytes]:
+    target = repo_templates_dir / rel_path
+    try:
+        with open(target, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def _get_template_mismatches() -> List[str]:
+    try:
+        from src.cli.utils import _repository_info
+        repo_root = Path(_repository_info.REPO_PATH)
+    except Exception:
+        return []
+
+    repo_templates_dir = repo_root / "src" / "cli" / "templates"
+    if not repo_templates_dir.exists():
+        return []
+
+    pkg_root = resources.files("src.cli.templates")
+    mismatches: List[str] = []
+
+    for rel_path in TEMPLATE_COMPARISON_PATHS:
+        installed_bytes = _read_installed_template(pkg_root, rel_path)
+        repo_bytes = _read_repo_template(repo_templates_dir, rel_path)
+        if installed_bytes != repo_bytes:
+            mismatches.append(rel_path)
+
+    return mismatches
+
+def warn_if_template_mismatch() -> None:
+    mismatches = _get_template_mismatches()
+    if not mismatches:
+        return
+
+    details = "\n  ".join(mismatches)
+    logger.warning(
+        "Detected template changes in the working tree that are not in the installed package."
+    )
+    message = (
+        "Template files differ from the installed package:\n"
+        f"  {details}\n"
+        "Re-run `pip install .` (or `pip install -e .` to avoid this in future) to pick up changes.\n"
+        "Continue anyway?"
+    )
+    if not click.confirm(message, default=False):
+        raise click.ClickException("Aborted due to template mismatch.")
 
 def parse_sources_option(ctx, param, value):
     """Parse comma-separated data sources list"""

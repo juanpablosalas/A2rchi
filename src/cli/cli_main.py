@@ -67,6 +67,8 @@ def create(name: str, config_files: list, config_dir: str, env_file: str, servic
     print("Starting A2RCHI deployment process...")
     setup_cli_logging(verbosity=verbosity)
     logger = get_logger(__name__)
+
+    warn_if_template_mismatch()
     
     # Check if Docker is available when --podman is not specified
     if not other_flags.get('podman', False) and not check_docker_available():
