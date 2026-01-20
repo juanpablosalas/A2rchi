@@ -360,24 +360,6 @@ class SSOCollector:
         except Exception as exc:  # pragma: no cover - defensive catch
             logger.error(f"SSO scraping failed for {url}: {exc}")
             return []
-    
-    def get_auth(self, url: str) -> Dict | None:
-        if not self._enabled: 
-            logger.error("SSO is disabled or not configured")
-            return None
-
-        scraper_class, scraper_kwargs = self._resolve_scraper()
-        if scraper_class is None: 
-            return None
-
-        try: 
-            with scraper_class(**scraper_kwargs) as scraper:
-                res = scraper.authenticate
-                pass
-        except Exception as e:
-            logger.error("Something went wrong getting authentication for {url}")
-            return None
-        
 
     def _resolve_scraper(self):
         entry = self._class_map.get(self._class_name)
