@@ -6,7 +6,7 @@ import re
 import time
 import urllib.parse
 from abc import ABC, abstractmethod
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -15,7 +15,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
 from src.data_manager.collectors.scrapers.scraped_resource import \
-    ScrapedResource
+    ScrapedResource, BrowserIntermediaryResult
 from src.utils.env import read_secret
 from src.utils.logging import get_logger
 
@@ -259,6 +259,25 @@ class SSOScraper(ABC):
                 # Navigate back to target page
                 title = self.navigate_to(url)
                 return title
+            else:
+                return None
+        except Exception as e:
+            logger.warning(f"Error during authentication: {e}")
+            return None
+
+    def authenticate(self, url):
+        """Complete authentication flow and navigate to target URL."""
+        try:
+            if not self.driver:
+                self.setup_driver()
+                
+            # First navigate to trigger SSO
+            self.driver.get(url)
+            
+            # Login
+            if self.login():
+                # Navigate back to target page
+                return self.driver.get_cookies()
             else:
                 return None
         except Exception as e:
