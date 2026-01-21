@@ -11,8 +11,8 @@ services:
     host: chromadb
     external_port: 8123
   data_manager:
-    port: 7872
-    external_port: 7872
+    port: 4242
+    external_port: 4242
 
 data_manager:
   embedding_name: HuggingFaceEmbeddings
