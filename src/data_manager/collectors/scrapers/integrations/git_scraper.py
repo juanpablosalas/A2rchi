@@ -159,16 +159,19 @@ class GitScraper:
                 used_blob_links = True
             logger.info(f"Indexing Git doc: {current_url}")
             text_content = markdown_path.read_text(encoding="utf-8")
+            relative_path = Path(parent_repo) / markdown_path.relative_to(repo_path)
             resource = ScrapedResource(
                 url=current_url,
                 content=text_content,
-                suffix="txt",
+                suffix=markdown_path.suffix.lstrip(".") or "txt",
                 source_type="git",
                 metadata={
                     "path": str(markdown_path.relative_to(repo_path)),
                     "title": markdown_path.stem.replace("_", " ").replace("-", " ").title(),
                     "parent": parent_repo,
                 },
+                file_name=markdown_path.name,
+                relative_path=str(relative_path),
             )
             if resource.content:
                 resources.append(resource)
@@ -218,6 +221,7 @@ class GitScraper:
                 continue
 
             resource_url = self._build_blob_url(base_url, ref, rel_path)
+            relative_path = Path(repo_name) / rel_path
             resource = ScrapedResource(
                 url=resource_url,
                 content=text_content,
@@ -229,6 +233,8 @@ class GitScraper:
                     "ref": ref,
                     "file_name": file_path.name,
                 },
+                file_name=file_path.name,
+                relative_path=str(relative_path),
             )
             resources.append(resource)
 

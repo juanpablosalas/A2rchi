@@ -31,6 +31,7 @@ class PersistenceService:
             logger.debug("Skipping existing resource %s -> %s", resource.get_hash(), file_path)
             # Still update indices/metadata as needed.
             return file_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         content = resource.get_content()
         self._write_content(file_path, content)
 
