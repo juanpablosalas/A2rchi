@@ -1528,7 +1528,6 @@ class FlaskAppWrapper(object):
                 include_agent_steps=include_agent_steps,
                 include_tool_steps=include_tool_steps,
             ):
-                logger.debug(f"\n\n\nStreaming event\n\n\n")
                 yield json.dumps(event, default=str) + "\n"
 
         headers = {

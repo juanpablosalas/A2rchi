@@ -57,6 +57,7 @@ class CatalogService:
     data_path: Path | str
     include_extensions: Sequence[str] = field(default_factory=lambda: sorted(DEFAULT_TEXT_EXTENSIONS))
     db_filename: str = "catalog.sqlite"
+    # in memory indices
     _file_index: Dict[str, str] = field(init=False, default_factory=dict)
     _metadata_index: Dict[str, str] = field(init=False, default_factory=dict)
 
@@ -100,6 +101,7 @@ class CatalogService:
         payload = metadata or {}
         display_name = payload.get("display_name") or resource_hash
         source_type = payload.get("source_type") or "unknown"
+        logger.debug("Upserting resource %s (%s) -> %s", resource_hash, source_type, path)
 
         extra = dict(payload)
         for key in _METADATA_COLUMN_MAP:

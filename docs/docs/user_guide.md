@@ -37,6 +37,19 @@ Finally, we support various **retrievers** and **embedding techniques** for docu
 These are configured via the configuration file.
 See the `Vector Store` section below for more details.
 
+### Agent tools (search + retrieval)
+
+The chat agent can use a few built-in tools to locate evidence. These are internal capabilities of the chat service:
+
+- **Metadata search**: find files by name/path/source metadata. Use free-text for partial matches, or exact filters with `key:value`.
+  Example: `mz_dilepton.py` or `relative_path:full/path/to/mz_dilepton.py`.
+- **Content search (grep)**: line-level search inside file contents; supports regex and context lines.
+  Example: `timeout error` with `before=2` and `after=2`.
+- **Document fetch**: pull full text for a specific file by hash (truncated with `max_chars`).
+- **Vectorstore search**: semantic retrieval of relevant passages when you don't know exact keywords.
+
+These tools are meant to be used together: search first, then fetch only the most relevant documents.
+
 ### Optional command line options
 
 In addition to the required `--name`, `--config/--config-dir`, `--env-file`, and `--services` arguments, the `a2rchi create` command accepts several useful flags:
