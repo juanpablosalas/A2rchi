@@ -296,8 +296,12 @@ async function populateDropdown() {
         }
         configOptionsMeta.clear();
 
+        const options = Array.isArray(data.options) ? data.options : [];
+        if (!options.length) {
+            console.warn("No configs returned from /api/get_configs");
+        }
         // Populate the dropdown with options from the API response
-        response.options.forEach(optionData => {
+        options.forEach(optionData => {
             if (!optionData || !optionData.name) return;
             const normalizedDescription = optionData.description || "";
             configOptionsMeta.set(optionData.name, {

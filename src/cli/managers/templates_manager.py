@@ -196,15 +196,27 @@ class TemplateManager:
         prompt_mappings: Dict[str, Dict[str, str]] = {}
         for config in configs:
             name = config["name"]
+            config_path = config.get("_config_path")
+            config_dir = Path(config_path).expanduser().parent if config_path else None
             pipeline_names = config.get("a2rchi", {}).get("pipelines") or []
             for pipeline_name in pipeline_names:
                 pipeline_config = config.get("a2rchi", {}).get("pipeline_map", {}).get(pipeline_name, {})
                 prompts_config = pipeline_config.get("prompts", {})
-                prompt_mappings[name] = self._copy_pipeline_prompts(context.base_dir, prompts_config)
+                prompt_mappings[name] = self._copy_pipeline_prompts(
+                    context.base_dir,
+                    prompts_config,
+                    config_dir=config_dir,
+                )
 
         return prompt_mappings
 
-    def _copy_pipeline_prompts(self, base_dir: Path, prompts_config: Dict[str, Any]) -> Dict[str, str]:
+    def _copy_pipeline_prompts(
+        self,
+        base_dir: Path,
+        prompts_config: Dict[str, Any],
+        *,
+        config_dir: Optional[Path] = None,
+    ) -> Dict[str, str]:
         prompt_mappings: Dict[str, str] = {}
 
         for _, section_prompts in prompts_config.items():
@@ -216,6 +228,10 @@ class TemplateManager:
                     continue
 
                 source_path = Path(prompt_path).expanduser()
+                if not source_path.is_absolute() and config_dir:
+                    # Prefer config-relative paths but fall back to CWD if it already exists.
+                    if not source_path.exists():
+                        source_path = (config_dir / source_path).resolve()
                 if not source_path.exists():
                     logger.warning(f"Prompt file not found: {prompt_path}")
                     continue

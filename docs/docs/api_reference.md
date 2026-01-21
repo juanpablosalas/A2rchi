@@ -54,7 +54,58 @@ a2rchi delete --name <deployment_name> [OPTIONS]
 
 ---
 
-#### 3. `list-services`
+#### 3. `restart`
+
+Restart a specific service in an existing deployment without restarting the entire stack.
+
+**Usage:**
+```sh
+a2rchi restart --name <deployment_name> --service <service_name> [OPTIONS]
+```
+
+**Options:**
+
+- `--name, -n` (str, required): Name of the existing deployment.
+- `--service, -s` (str): Service to restart (default: `chatbot`).
+- `--config, -c` (str): Path to updated YAML configuration file(s) (can be specified multiple times).
+- `--config-dir, -cd` (str): Path to directory containing configuration files.
+- `--env-file, -e` (str): Path to `.env` file with secrets.
+- `--no-build`: Restart without rebuilding the container image.
+- `--with-deps`: Also restart dependent services (by default, only the specified service is restarted).
+- `--podman, -p`: Use Podman instead of Docker.
+- `--verbosity, -v` (int): Logging verbosity level (0-4, default: 3).
+
+**Notes:**
+
+- **Configuration changes**: Restarting with `--no-build` will reflect changes to configuration files. If you've modified code, you must rebuild the image (omit the `--no-build` flag).
+- **Updating configuration**: If you provide `--config` or `--config-dir`, the command will update the deployment's configuration before restarting the service.
+- **Finding services**: Use `a2rchi list-deployments` to see existing deployments. If you specify an invalid service name, the restart command will display the available services for that deployment.
+
+**Examples:**
+
+Quick config update without rebuilding:
+```sh
+a2rchi restart -n mybot --service chatbot --no-build
+```
+
+Test new agent code (requires rebuild):
+```sh
+a2rchi restart -n mybot --service chatbot -c updated_config.yaml
+```
+
+Restart with updated secrets:
+```sh
+a2rchi restart -n mybot --service chatbot -e new_secrets.env --no-build
+```
+
+Restart data_manager to re-scrape sources:
+```sh
+a2rchi restart -n mybot --service data_manager
+```
+
+---
+
+#### 4. `list-services`
 
 List all available A2RCHI services and data sources.
 
@@ -65,7 +116,7 @@ a2rchi list-services
 
 ---
 
-#### 4. `list-deployments`
+#### 5. `list-deployments`
 
 List all existing A2RCHI deployments.
 
@@ -76,7 +127,7 @@ a2rchi list-deployments
 
 ---
 
-#### 5. `evaluate`
+#### 6. `evaluate`
 
 Launch the benchmarking runtime to evaluate one or more configurations against a set of questions/answers.
 
@@ -103,6 +154,11 @@ a2rchi create --name mybot --config my.yaml --env-file secrets.env --services ch
 **Delete a deployment and remove images/volumes:**
 ```sh
 a2rchi delete --name mybot --rmi --rmv
+```
+
+**Restart a service without rebuilding:**
+```sh
+a2rchi restart --name mybot --service chatbot --no-build
 ```
 
 **List all deployments:**
