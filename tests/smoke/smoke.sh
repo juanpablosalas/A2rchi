@@ -7,7 +7,7 @@ if [[ -z "${NAME}" ]]; then
   exit 1
 fi
 
-BASE_URL="${BASE_URL:-http://localhost:7861}"
+BASE_URL="${BASE_URL:-http://localhost:2786}"
 TIMEOUT="${TIMEOUT:-180}"
 CLIENT_ID="${CLIENT_ID:-$(python3 - <<'PY'
 import uuid
