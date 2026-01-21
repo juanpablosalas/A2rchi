@@ -85,7 +85,7 @@ a2rchi restart -n test --service chatbot -c my_config.yaml --no-build -e secrets
 
 - **Configuration changes**: Restarting with `--no-build` will reflect changes to configuration files. If you've modified code, you must rebuild the image (omit the `--no-build` flag).
 - **Updating configuration**: If you provide `--config` or `--config-dir`, the command will update the deployment's configuration before restarting the service.
-- **Available services**: Use `a2rchi list-deployments` to see existing deployments. The restart command will list available services if you specify an invalid service name.
+- **Finding services**: To see existing deployments, use `a2rchi list-deployments`. If you specify an invalid service name, the restart command will display the available services for that deployment.
 
 **Common use cases:**
 
