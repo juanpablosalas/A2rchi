@@ -228,7 +228,9 @@ class TemplateManager:
 
                 source_path = Path(prompt_path).expanduser()
                 if not source_path.is_absolute() and config_dir:
-                    source_path = (config_dir / source_path).resolve()
+                    # Prefer config-relative paths but fall back to CWD if it already exists.
+                    if not source_path.exists():
+                        source_path = (config_dir / source_path).resolve()
                 if not source_path.exists():
                     logger.warning(f"Prompt file not found: {prompt_path}")
                     continue

@@ -60,14 +60,12 @@ runs:
   steps:
     - name: Ensure smoke scripts are executable
       shell: bash
-      working-directory: ${{ github.workspace }}
       run: |
         set -euo pipefail
         chmod +x tests/smoke/*.sh
 
     - name: Prepare CI config
       shell: bash
-      working-directory: ${{ github.workspace }}
       env:
         CONFIG_SRC: ${{ inputs.config-path }}
         CONFIG_DEST: ${{ inputs.config-destination }}
@@ -86,7 +84,6 @@ runs:
 
     - name: Launch deployment
       shell: bash
-      working-directory: ${{ github.workspace }}
       env:
         DEPLOYMENT_NAME: ${{ inputs.deployment-name }}
         EXTRA_ENV: ${{ inputs.extra-env }}
@@ -141,7 +138,6 @@ runs:
 
     - name: Run smoke tests
       shell: bash
-      working-directory: ${{ github.workspace }}
       env:
         DEPLOYMENT_NAME: ${{ inputs.deployment-name }}
         EXTRA_ENV: ${{ inputs.extra-env }}
