@@ -211,7 +211,11 @@ class FlaskAppWrapper:
 
             title = metadata_source.get("ticket_id") or metadata_source.get("url")
             if not title:
-                title = metadata_source.get("display_name") or source_hash
+                title = (
+                    metadata_source.get("display_name")
+                    or metadata_source.get("file_name")
+                    or source_hash
+                )
 
             ts = metadata_source.get("modified_at") or metadata_source.get("created_at") or metadata_source.get("ingested_at") or ""
             sources_index.setdefault(source_type, []).append(
@@ -401,11 +405,12 @@ class FlaskAppWrapper:
             except Exception as exc:
                 logger.warning("Failed to load document content for %s: %s", file_hash, exc)
 
-            title = metadata.get("title") or metadata.get("display_name")
+            display_name = metadata.get("display_name") or metadata.get("file_name") or ""
+            title = metadata.get("title") or display_name
             return jsonify(
                 {
                     "document": document or "",
-                    "display_name": metadata.get("display_name") or "",
+                    "display_name": display_name,
                     "source_type": metadata.get("source_type") or "",
                     "original_url": metadata.get("url") or "",
                     "title": title or "",
@@ -517,6 +522,7 @@ class FlaskAppWrapper:
                 metadata = item.get("metadata") or {}
                 snippet = (
                     metadata.get("display_name")
+                    or metadata.get("file_name")
                     or metadata.get("title")
                     or metadata.get("url")
                     or ""
@@ -641,7 +647,12 @@ class FlaskAppWrapper:
                                 logger.error("No text content loaded from %s for metadata match", path)
                         snippet = text
                     else:
-                        snippet = metadata.get("display_name") or metadata.get("url") or ""
+                        snippet = (
+                            metadata.get("display_name")
+                            or metadata.get("file_name")
+                            or metadata.get("url")
+                            or ""
+                        )
 
                 if meta_match or content_match:
                     hits.append(

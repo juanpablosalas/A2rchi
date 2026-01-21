@@ -54,7 +54,9 @@ class ScrapedResource(BaseResource):
         display_name = extra.get("display_name")
         if display_name is None:
             display_name = self._format_link_display(self.url)
-        return ResourceMetadata(display_name=display_name, extra=extra)
+        if display_name:
+            extra["display_name"] = str(display_name)
+        return ResourceMetadata(file_name=self.get_filename(), extra=extra)
     
     @staticmethod
     def _format_link_display(link: str) -> str:

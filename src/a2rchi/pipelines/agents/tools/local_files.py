@@ -173,7 +173,7 @@ def _format_grep_hits(hits: List[Dict[str, object]]) -> str:
         resource_hash = item.get("hash")
         path = item.get("path", "")
         metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
-        display_name = metadata.get("display_name") or ""
+        display_name = metadata.get("display_name") or metadata.get("file_name") or ""
         source_type = metadata.get("source_type") or ""
         meta_line = " ".join(part for part in [source_type, display_name] if part)
         lines.append(f"[{idx}] {path} (hash={resource_hash})")
@@ -314,7 +314,7 @@ def create_metadata_search_tool(
             "Important: key:value filters are exact matches (ANDed within a group, OR across groups).\n"
             "Use free-text for filename/path contains searches (e.g., \"mz_dilepton.py\").\n"
             "Examples: \"mz_dilepton.py\" or \"relative_path:full/path/to/mz_dilepton.py\" "
-            "or \"display_name:foo.py OR relative_path:bar/foo.py\".\n"
+            "or \"file_name:foo.py OR relative_path:bar/foo.py\".\n"
             "Output: list of matches with hash, path, metadata, and a short snippet."
         )
     )

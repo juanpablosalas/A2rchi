@@ -166,7 +166,7 @@ class GitScraper:
                 suffix=markdown_path.suffix.lstrip(".") or "txt",
                 source_type="git",
                 metadata={
-                    "path": str(markdown_path.relative_to(repo_path)),
+                    "repo_path": str(markdown_path.relative_to(repo_path)),
                     "title": markdown_path.stem.replace("_", " ").replace("-", " ").title(),
                     "parent": parent_repo,
                 },
@@ -228,7 +228,7 @@ class GitScraper:
                 suffix=file_path.suffix.lstrip("."),
                 source_type="git",
                 metadata={
-                    "path": str(rel_path),
+                    "repo_path": str(rel_path),
                     "parent": repo_name,
                     "ref": ref,
                     "file_name": file_path.name,

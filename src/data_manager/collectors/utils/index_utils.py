@@ -8,6 +8,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from langchain_core.documents import Document
 
+from src.data_manager.collectors.utils.metadata import INDEXED_METADATA_KEYS
 from src.data_manager.vectorstore.loader_utils import load_doc_from_path
 from src.utils.logging import get_logger
 
@@ -33,21 +34,7 @@ DEFAULT_TEXT_EXTENSIONS = {
     ".h",
 }
 
-_METADATA_COLUMN_MAP = {
-    "path": "path",
-    "display_name": "display_name",
-    "source_type": "source_type",
-    "url": "url",
-    "ticket_id": "ticket_id",
-    "suffix": "suffix",
-    "size_bytes": "size_bytes",
-    "original_path": "original_path",
-    "base_path": "base_path",
-    "relative_path": "relative_path",
-    "created_at": "created_at",
-    "modified_at": "modified_at",
-    "ingested_at": "ingested_at",
-}
+_METADATA_COLUMN_MAP = {key: key for key in INDEXED_METADATA_KEYS}
 
 
 @dataclass
@@ -99,7 +86,8 @@ class CatalogService:
         metadata: Optional[Dict[str, str]],
     ) -> None:
         payload = metadata or {}
-        display_name = payload.get("display_name") or resource_hash
+        file_name = payload.get("file_name") or Path(path).name
+        display_name = payload.get("display_name")
         source_type = payload.get("source_type") or "unknown"
         logger.debug("Upserting resource %s (%s) -> %s", resource_hash, source_type, path)
 
@@ -116,6 +104,7 @@ class CatalogService:
                 INSERT INTO resources (
                     resource_hash,
                     path,
+                    file_name,
                     display_name,
                     source_type,
                     url,
@@ -130,9 +119,10 @@ class CatalogService:
                     ingested_at,
                     extra_json,
                     extra_text
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(resource_hash) DO UPDATE SET
                     path=excluded.path,
+                    file_name=excluded.file_name,
                     display_name=excluded.display_name,
                     source_type=excluded.source_type,
                     url=excluded.url,
@@ -151,7 +141,8 @@ class CatalogService:
                 (
                     resource_hash,
                     path,
-                    display_name,
+                    file_name,
+                    display_name or "",
                     source_type,
                     payload.get("url"),
                     payload.get("ticket_id"),
@@ -278,7 +269,7 @@ class CatalogService:
             like = f"%{query}%"
             where_clauses.append(
                 (
-                    "(display_name LIKE ? OR source_type LIKE ? OR url LIKE ? OR ticket_id LIKE ? "
+                    "(file_name LIKE ? OR source_type LIKE ? OR url LIKE ? OR ticket_id LIKE ? "
                     "OR path LIKE ? OR original_path LIKE ? OR relative_path LIKE ? OR extra_text LIKE ?)"
                 )
             )
@@ -381,6 +372,7 @@ class CatalogService:
                 CREATE TABLE IF NOT EXISTS resources (
                     resource_hash TEXT PRIMARY KEY,
                     path TEXT NOT NULL,
+                    file_name TEXT NOT NULL,
                     display_name TEXT NOT NULL,
                     source_type TEXT NOT NULL,
                     url TEXT,
@@ -398,6 +390,7 @@ class CatalogService:
                 )
                 """
             )
+            self._ensure_column(conn, "file_name", "TEXT")
             self._ensure_column(conn, "extra_text", "TEXT")
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_source_type ON resources(source_type)"
@@ -408,6 +401,7 @@ class CatalogService:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_resources_ticket_id ON resources(ticket_id)"
             )
+            self._backfill_file_names(conn)
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -420,6 +414,22 @@ class CatalogService:
         if column in existing:
             return
         conn.execute(f"ALTER TABLE resources ADD COLUMN {column} {column_type}")
+
+    def _backfill_file_names(self, conn: sqlite3.Connection) -> None:
+        rows = conn.execute(
+            "SELECT resource_hash, path, file_name FROM resources WHERE file_name IS NULL OR file_name = ''"
+        ).fetchall()
+        for row in rows:
+            stored_path = row["path"]
+            if not stored_path:
+                continue
+            file_name = Path(stored_path).name
+            if not file_name:
+                continue
+            conn.execute(
+                "UPDATE resources SET file_name = ? WHERE resource_hash = ?",
+                (file_name, row["resource_hash"]),
+            )
 
     def _resolve_path(self, stored_path: str) -> Path:
         path = Path(stored_path)
@@ -444,17 +454,20 @@ class CatalogService:
                     continue
                 metadata[str(key)] = str(value)
 
-        display_name = data.get("display_name")
+        display_name = metadata.get("display_name") or data.get("display_name")
         if display_name:
             metadata["display_name"] = str(display_name)
 
         for key, column in _METADATA_COLUMN_MAP.items():
-            if key == "display_name":
-                continue
             value = data.get(column)
-            if value is None:
+            if value is None or value == "":
                 continue
             metadata[key] = str(value)
+
+        if "file_name" not in metadata:
+            stored_path = data.get("path")
+            if stored_path:
+                metadata["file_name"] = Path(stored_path).name
 
         return metadata
 

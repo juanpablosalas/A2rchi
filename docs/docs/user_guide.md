@@ -832,7 +832,7 @@ We support two modes, which you can specify in the configuration file under `ser
 
 The RAGAS mode will use the Ragas RAG evaluator module to return numerical values judging by 4 of their provided metrics: `answer_relevancy`, `faithfulness`, `context precision`, and `context relevancy`. More information about these metrics can be found on the [Ragas website](https://docs.ragas.io/en/stable/concepts/metrics/). 
 
-The SOURCES mode will check if the retrieved documents contain any of the correct sources. The matching is done by comparing a given metadata field for any source. The default is `display_name`, as per the configuration file (`data_manager:services:benchmarking:mode_settings:sources:default_match_field`). You can override this on a per-query basis by specifying the `sources_match_field` field in the queries file, as described above.
+The SOURCES mode will check if the retrieved documents contain any of the correct sources. The matching is done by comparing a given metadata field for any source. The default is `file_name`, as per the configuration file (`data_manager:services:benchmarking:mode_settings:sources:default_match_field`). You can override this on a per-query basis by specifying the `sources_match_field` field in the queries file, as described above.
 
 The configuration file should look like the following:
 
@@ -846,7 +846,7 @@ services:
       - "SOURCES"
     mode_settings:
       sources:
-        default_match_field: ["display_name"] # default field to match sources against, can be overridden in the queries file
+        default_match_field: ["file_name"] # default field to match sources against, can be overridden in the queries file
       ragas_settings:
         provider: <provider name> # can be one of OpenAI, HuggingFace, Ollama, and Anthropic
         evaluation_model_settings:

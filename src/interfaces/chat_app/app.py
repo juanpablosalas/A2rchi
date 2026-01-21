@@ -353,10 +353,12 @@ class ChatWrapper:
         display_name = metadata.get("display_name")
         if isinstance(display_name, str) and display_name.strip():
             return display_name.strip()
-        else:
-            logger.error("display_name is not a valid non-empty string in metadata")
-            logger.error(f"Metadata content: {metadata}")
-            return None
+        file_name = metadata.get("file_name")
+        if isinstance(file_name, str) and file_name.strip():
+            return file_name.strip()
+        logger.error("display_name or file_name is not a valid non-empty string in metadata")
+        logger.error(f"Metadata content: {metadata}")
+        return None
 
     @staticmethod
     def _get_title(metadata: dict) -> str | None:

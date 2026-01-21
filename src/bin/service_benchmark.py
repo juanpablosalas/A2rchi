@@ -216,7 +216,7 @@ class Benchmarker:
         n_sources = len(question_item.get('sources', []))
         if not match_fields:
             # hardcode a default if nothing is provided
-            match_fields = ['display_name'] * n_sources
+            match_fields = ['file_name'] * n_sources
         elif len(match_fields) == 1 and n_sources > 1:
             # expand single field to all sources
             match_fields = match_fields * n_sources
