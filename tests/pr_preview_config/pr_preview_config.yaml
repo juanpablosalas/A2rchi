@@ -9,6 +9,7 @@ services:
     trained_on: "Dummy data for preview"
   chromadb:
     host: chromadb
+    port: 8123
     external_port: 8123
   data_manager:
     port: 4242
