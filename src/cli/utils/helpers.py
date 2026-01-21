@@ -1,9 +1,12 @@
+import copy
+from importlib import resources
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import click
+import yaml
 
 from src.cli.service_registry import service_registry
 from src.cli.source_registry import source_registry
@@ -11,6 +14,16 @@ from src.cli.utils.service_builder import ServiceBuilder
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+TEMPLATE_COMPARISON_PATHS = (
+    "base-config.yaml",
+    "base-compose.yaml",
+    "base-init.sql",
+    "grafana/datasources.yaml",
+    "grafana/dashboards.yaml",
+    "grafana/a2rchi-default-dashboard.json",
+    "grafana/grafana.ini",
+)
 
 def check_docker_available() -> bool:
     """Check if Docker is available and not just Podman emulation."""
@@ -62,6 +75,63 @@ def parse_services_option(ctx, param, value):
     
     return services
 
+def _read_installed_template(pkg_root, rel_path: str) -> Optional[bytes]:
+    try:
+        target = pkg_root.joinpath(rel_path)
+        if not target.is_file():
+            return None
+        return target.read_bytes()
+    except Exception:
+        return None
+
+def _read_repo_template(repo_templates_dir: Path, rel_path: str) -> Optional[bytes]:
+    target = repo_templates_dir / rel_path
+    try:
+        with open(target, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+
+def _get_template_mismatches() -> List[str]:
+    try:
+        from src.cli.utils import _repository_info
+        repo_root = Path(_repository_info.REPO_PATH)
+    except Exception:
+        return []
+
+    repo_templates_dir = repo_root / "src" / "cli" / "templates"
+    if not repo_templates_dir.exists():
+        return []
+
+    pkg_root = resources.files("src.cli.templates")
+    mismatches: List[str] = []
+
+    for rel_path in TEMPLATE_COMPARISON_PATHS:
+        installed_bytes = _read_installed_template(pkg_root, rel_path)
+        repo_bytes = _read_repo_template(repo_templates_dir, rel_path)
+        if installed_bytes != repo_bytes:
+            mismatches.append(rel_path)
+
+    return mismatches
+
+def warn_if_template_mismatch() -> None:
+    mismatches = _get_template_mismatches()
+    if not mismatches:
+        return
+
+    details = "\n  ".join(mismatches)
+    logger.warning(
+        "Detected template changes in the working tree that are not in the installed package."
+    )
+    message = (
+        "Template files differ from the installed package:\n"
+        f"  {details}\n"
+        "Re-run `pip install .` (or `pip install -e .` to avoid this in future) to pick up changes.\n"
+        "Continue anyway?"
+    )
+    if not click.confirm(message, default=False):
+        raise click.ClickException("Aborted due to template mismatch.")
+
 def parse_sources_option(ctx, param, value):
     """Parse comma-separated data sources list"""
     if not value:
@@ -80,6 +150,128 @@ def parse_sources_option(ctx, param, value):
         )
     
     return sources
+
+def _infer_host_mode_from_compose(compose_data: Dict[str, Any]) -> bool:
+    services = compose_data.get("services", {}) or {}
+    for svc in services.values():
+        if isinstance(svc, dict) and svc.get("network_mode") == "host":
+            return True
+    return False
+
+def _infer_gpu_ids_from_compose(compose_data: Dict[str, Any]) -> Optional[object]:
+    services = compose_data.get("services", {}) or {}
+    gpu_ids: List[int] = []
+
+    for svc in services.values():
+        if not isinstance(svc, dict):
+            continue
+        deploy_devices = (
+            svc.get("deploy", {})
+            .get("resources", {})
+            .get("reservations", {})
+            .get("devices")
+        )
+        if deploy_devices:
+            return "all"
+
+        for entry in svc.get("devices", []) or []:
+            if not isinstance(entry, str):
+                continue
+            if "nvidia.com/gpu=all" in entry:
+                return "all"
+            if "nvidia.com/gpu=" in entry:
+                try:
+                    gpu_ids.append(int(entry.split("=", 1)[1]))
+                except ValueError:
+                    continue
+
+        for volume in svc.get("volumes", []) or []:
+            if isinstance(volume, str) and volume.startswith("a2rchi-models"):
+                return "all"
+
+    return sorted(set(gpu_ids)) if gpu_ids else None
+
+def _infer_tag_from_compose(compose_data: Dict[str, Any]) -> str:
+    services = compose_data.get("services", {}) or {}
+    for svc in services.values():
+        if not isinstance(svc, dict):
+            continue
+        image = svc.get("image")
+        if isinstance(image, str) and ":" in image:
+            return image.rsplit(":", 1)[1]
+    return "2000"
+
+def _render_config_for_compare(
+    config: Dict[str, Any],
+    host_mode: bool,
+    verbosity: int,
+    env,
+) -> Dict[str, Any]:
+    from src.cli.managers.templates_manager import TemplateManager
+
+    updated_config = copy.deepcopy(config)
+    if host_mode:
+        updated_config["host_mode"] = True
+        TemplateManager(env)._apply_host_mode_port_overrides(updated_config)
+
+    config_template = env.get_template("base-config.yaml")
+    rendered = config_template.render(verbosity=verbosity, **updated_config)
+    return yaml.safe_load(rendered)
+
+def _load_rendered_configs(configs_dir: Path) -> Dict[str, Dict[str, Any]]:
+    rendered: Dict[str, Dict[str, Any]] = {}
+    for config_path in configs_dir.glob("*.yaml"):
+        with open(config_path, "r") as f:
+            data = yaml.safe_load(f) or {}
+        name = data.get("name") or config_path.stem
+        rendered[name] = data
+    return rendered
+
+def _get_nested(config: Dict[str, Any], path: Tuple[str, ...]) -> Any:
+    value: Any = config
+    for key in path:
+        if not isinstance(value, dict):
+            return None
+        value = value.get(key)
+    return value
+
+def _validate_non_chatbot_sections(
+    current_configs: Dict[str, Dict[str, Any]],
+    new_configs: List[Dict[str, Any]],
+    *,
+    host_mode: bool,
+    verbosity: int,
+    env,
+) -> None:
+    restricted_paths = (
+        ("data_manager",),
+        ("services", "data_manager"),
+        ("services", "chromadb"),
+        ("services", "postgres"),
+    )
+    differences: List[str] = []
+
+    for config in new_configs:
+        name = config.get("name")
+        if not name or name not in current_configs:
+            raise click.ClickException(
+                f"Config '{name or 'unknown'}' does not match an existing deployment config."
+            )
+
+        rendered_new = _render_config_for_compare(config, host_mode, verbosity, env)
+        rendered_current = current_configs[name]
+
+        for path in restricted_paths:
+            if _get_nested(rendered_new, path) != _get_nested(rendered_current, path):
+                differences.append(f"{name}: {'.'.join(path)}")
+
+    if differences:
+        details = "\n  ".join(differences)
+        raise click.ClickException(
+            "Restart config changes are restricted to chatbot settings only. "
+            "The following sections changed:\n"
+            f"  {details}"
+        )
 
 def validate_services_selection(services: List[str]) -> None:
     """Validate that at least one service is selected, raise ClickException if not"""

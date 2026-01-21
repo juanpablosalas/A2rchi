@@ -139,6 +139,7 @@ services:
     volumes:
       - {{ chatbot_volume_name }}:/root/data/
       - ./configs:/root/A2rchi/configs
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
@@ -242,6 +243,7 @@ services:
     volumes:
       - {{ grader_volume_name }}:/root/data/
       - ./configs:/root/A2rchi/configs
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
@@ -300,6 +302,7 @@ services:
     volumes:
       - {{ chromadb_volume_name }}:/root/data/
       - ./configs:/root/A2rchi/configs
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
@@ -356,6 +359,7 @@ services:
     volumes:
       - {{ chromadb_volume_name }}:/root/data/
       - ./configs:/root/A2rchi/configs
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
@@ -414,6 +418,7 @@ services:
     volumes:
       - {{ chromadb_volume_name }}:/root/data/
       - ./configs:/root/A2rchi/configs
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
@@ -469,6 +474,7 @@ services:
       {% endfor %}
     volumes:
       - ./config.yaml:/root/A2rchi/config.yaml
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
@@ -529,6 +535,7 @@ services:
       - {{ benchmarking_volume_name }}:/root/data/
       - ./queries.txt:/root/A2rchi/QandA.txt
       - {{ benchmarking_dest }}:/root/A2rchi/benchmarks
+      - ./prompts:/root/A2rchi/prompts:ro
       {% for prompt_file in prompt_files | default([]) -%}
       - ./{{ prompt_file }}:/root/A2rchi/{{ prompt_file }}
       {% endfor %}
