@@ -69,16 +69,22 @@ class BaseReActAgent:
         memory: Optional[DocumentMemory] = None,
         messages: Optional[Sequence[BaseMessage]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        tool_calls: Optional[Sequence[Dict[str, Any]]] = None,
         final: bool = True,
     ) -> PipelineOutput:
         """Compose a PipelineOutput from the provided components."""
         documents = memory.unique_documents() if memory else []
+        resolved_messages = list(messages or [])
+        resolved_tool_calls = (
+            list(tool_calls) if tool_calls is not None else self._extract_tool_calls(resolved_messages)
+        )
         return PipelineOutput(
             answer=answer,
             source_documents=documents,
-            messages=messages or [],
+            messages=resolved_messages,
             metadata=metadata or {},
             final=final,
+            tool_calls=resolved_tool_calls,
         )
 
     def invoke(self, **kwargs) -> PipelineOutput:
@@ -110,14 +116,15 @@ class BaseReActAgent:
             if messages:
                 latest_messages = messages
                 content = self._message_content(messages[-1])
-                if content:
-                    yield self.finalize_output(
-                        answer=content,
-                        memory=self.active_memory,
-                        messages=messages,
-                        metadata={},
-                        final=False,
-                    )
+                tool_calls = self._extract_tool_calls(messages)
+                yield self.finalize_output(
+                    answer=content,
+                    memory=self.active_memory,
+                    messages=messages,
+                    metadata={},
+                    tool_calls=tool_calls,
+                    final=False,
+                )
         yield self._build_output_from_messages(latest_messages)
 
     async def astream(self, **kwargs) -> AsyncIterator[PipelineOutput]:
@@ -317,6 +324,34 @@ class BaseReActAgent:
         if len(content) > 400:
             content = f"{content[:397]}..."
         return f"{role}: {content}"
+
+    def _extract_tool_calls(self, messages: Sequence[BaseMessage]) -> List[Dict[str, Any]]:
+        tool_results: Dict[str, Any] = {}
+        for msg in messages:
+            tool_call_id = getattr(msg, "tool_call_id", None)
+            if tool_call_id:
+                tool_results[tool_call_id] = getattr(msg, "content", "")
+        tool_calls: List[Dict[str, Any]] = []
+        for msg in messages:
+            calls = getattr(msg, "tool_calls", None)
+            if not calls:
+                continue
+            for call in calls:
+                if isinstance(call, dict):
+                    entry = dict(call)
+                    tool_call_id = entry.get("id")
+                else:
+                    tool_call_id = getattr(call, "id", None)
+                    entry = {
+                        "name": getattr(call, "name", None),
+                        "args": getattr(call, "args", None),
+                        "id": tool_call_id,
+                        "type": getattr(call, "type", None),
+                    }
+                if tool_call_id and tool_call_id in tool_results:
+                    entry["result"] = tool_results[tool_call_id]
+                tool_calls.append(entry)
+        return tool_calls
 
     def _build_output_from_messages(
         self,

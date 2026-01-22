@@ -86,7 +86,7 @@ Resources may optionally override:
 - `get_metadata()`: returns a metadata object (typically `ResourceMetadata`) describing the item. Keys should be serialisable strings and are flattened into the vector store metadata.
 - `get_metadata_path()`: inherited helper that derives a `.meta.yaml` path when metadata is present.
 
-`ResourceMetadata` (`src/data_manager/collectors/utils/metadata.py`) enforces a required `display_name` and normalises the `extra` dictionary so all values become strings. Use this to expose source-specific information such as URLs, ticket identifiers, or visibility flags.
+`ResourceMetadata` (`src/data_manager/collectors/utils/metadata.py`) enforces a required `file_name` and normalises the `extra` dictionary so all values become strings. Optional UI labels like `display_name` live in `extra`, alongside source-specific information such as URLs, ticket identifiers, or visibility flags.
 
 The guiding philosophy is that **resources describe content**, but never write to disk themselves. This separation keeps collectors simple, testable, and ensures consistent validation when persisting different resource types.
 

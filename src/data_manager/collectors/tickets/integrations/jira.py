@@ -77,8 +77,11 @@ class JiraClient:
         since_iso: Optional[str] = None,
     ) -> Iterator[TicketResource]:
         """Return an iterator of tickets pulled from JIRA."""
-        if not self.client or not projects:
-            logger.warning("Skipping JIRA collection; client not initialized or projects missing.")
+        if not self.client:
+            logger.warning("Skipping JIRA collection; client not initialized.")
+            return iter(())
+        if not projects:
+            logger.warning("Skipping JIRA collection; projects missing.")
             return iter(())
         for project in projects:
             yield from self._fetch_ticket_resources(project, since_iso=since_iso)    

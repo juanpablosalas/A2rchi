@@ -1,13 +1,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, TYPE_CHECKING, Union, Any
-
-import yaml
+from typing import Any, Dict, TYPE_CHECKING, Union
 
 from src.data_manager.collectors.utils.index_utils import CatalogService
 from src.utils.logging import get_logger
-from src.data_manager.collectors.utils.metadata import ResourceMetadata
 
 if TYPE_CHECKING:
     from src.data_manager.collectors.resource_base import BaseResource
@@ -22,14 +19,11 @@ class PersistenceService:
         self.data_path = Path(data_path)
 
         self.catalog = CatalogService(self.data_path)
-        self._index_dirty = False
-        self._metadata_index_dirty = False
 
     def persist_resource(self, resource: "BaseResource", target_dir: Path, overwrite:bool = False) -> Path:
         """
         Write a resource and its metadata to disk,
-        updating both indices accordingly: with the unique hash of the file as key for both,
-        and the path to the file (metadata file) as value for the main (metadata) index.
+        updating the catalog with the unique hash of the file and its metadata.
         """
         target_dir.mkdir(parents=True, exist_ok=True)
         file_path = resource.get_file_path(target_dir)
@@ -37,23 +31,16 @@ class PersistenceService:
             logger.debug("Skipping existing resource %s -> %s", resource.get_hash(), file_path)
             # Still update indices/metadata as needed.
             return file_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
         content = resource.get_content()
         self._write_content(file_path, content)
 
         metadata = resource.get_metadata()
+        metadata_dict = None
         if metadata is not None:
-            metadata_path = resource.get_metadata_path(file_path)
-            self._write_metadata(metadata_path, metadata)
-            try:
-                metadata_relative_path = (
-                    metadata_path.relative_to(self.data_path).as_posix()
-                )
-            except ValueError:
-                metadata_relative_path = str(metadata_path)
-
-            resource_hash = resource.get_hash()
-            self.catalog.metadata_index[resource_hash] = metadata_relative_path
-            self._metadata_index_dirty = True
+            metadata_dict = self._normalise_metadata(metadata)
+            if not metadata_dict:
+                raise ValueError("Refusing to persist empty metadata payload")
 
         try:
             relative_path = file_path.relative_to(self.data_path).as_posix()
@@ -62,21 +49,17 @@ class PersistenceService:
 
         resource_hash = resource.get_hash()
         logger.debug(f"Stored resource {resource_hash} -> {file_path}")
-        self.catalog.file_index[resource_hash] = relative_path
-        self._index_dirty = True
+        self.catalog.upsert_resource(resource_hash, relative_path, metadata_dict)
 
         return file_path
     
     def delete_resource(self, resource_hash:str, flush: bool = True) -> Path:
         """
         Delete a resource and its metadata from disk,
-        updating both indices accordingly: with the unique hash of the file as key for both,
-        and the path to the file (metadata file) as value for the main (metadata) index.
+        updating the catalog accordingly.
         """
-        
         try:
             stored_file = self.catalog.file_index[resource_hash]
-            stored_metadata = self.catalog.metadata_index[resource_hash]
         except KeyError as exc:
             raise ValueError(f"Resource hash {resource_hash} not found. {exc}") from exc
 
@@ -84,17 +67,8 @@ class PersistenceService:
         if not file_path.is_absolute():
             file_path = (self.data_path / file_path).resolve()
 
-        metadata_path = Path(stored_metadata)
-        if not metadata_path.is_absolute():
-            metadata_path = (self.data_path / metadata_path).resolve()
-
         self._delete_content(file_path)
-        self.catalog.file_index.pop(resource_hash, None)
-        self._index_dirty = True
-
-        self._delete_metadata(metadata_path)
-        self.catalog.metadata_index.pop(resource_hash, None)
-        self._metadata_index_dirty = True
+        self.catalog.delete_resource(resource_hash)
 
         if flush:
             self.flush_index()
@@ -134,7 +108,6 @@ class PersistenceService:
         if relative_prefix is not None:
             prefix_parts = relative_prefix.parts
             keys_to_remove = []
-            metadata_keys_to_remove = []
             for key, stored in self.catalog.file_index.items():
                 stored_path = Path(stored)
                 if stored_path.is_absolute():
@@ -146,35 +119,11 @@ class PersistenceService:
                     keys_to_remove.append(key)
             if keys_to_remove:
                 for key in keys_to_remove:
-                    self.catalog.file_index.pop(key, None)
-                self._index_dirty = True
-
-            for key, stored in self.catalog.metadata_index.items():
-                stored_path = Path(stored)
-                if stored_path.is_absolute():
-                    try:
-                        stored_path = stored_path.relative_to(self.data_path)
-                    except ValueError:
-                        continue
-                if stored_path.parts[: len(prefix_parts)] == prefix_parts:
-                    metadata_keys_to_remove.append(key)
-            if metadata_keys_to_remove:
-                for key in metadata_keys_to_remove:
-                    self.catalog.metadata_index.pop(key, None)
-                self._metadata_index_dirty = True
+                    self.catalog.delete_resource(key)
+                self.flush_index()
 
     def flush_index(self) -> None:
-        if self._index_dirty:
-            self.catalog.write_index(self.data_path, self.catalog.file_index, filename=self.catalog.filename)
-            self._index_dirty = False
-
-        if self._metadata_index_dirty:
-            self.catalog.write_index(
-                self.data_path,
-                self.catalog.metadata_index,
-                filename=self.catalog.metadata_filename,
-            )
-            self._metadata_index_dirty = False
+        self.catalog.refresh()
 
     def _remove_tree(self, path: Path) -> None:
         for item in path.iterdir():
@@ -210,22 +159,8 @@ class PersistenceService:
             "resources must return str or bytes"
         )
 
-    def _write_metadata(self, metadata_path: Path, metadata: Any) -> None:
-        if type(metadata) != ResourceMetadata:
-            raise Exception("Metadata must be of type ResourceMetadata")
-        metadata_dict = self._normalise_metadata(metadata)
-        if not metadata_dict:
-            raise ValueError("Refusing to persist empty metadata payload")
-
-        metadata_path.parent.mkdir(parents=True, exist_ok=True)
-        with metadata_path.open("w", encoding="utf-8") as fh:
-            yaml.safe_dump(metadata_dict, fh, sort_keys=True)
-
     def _delete_content(self,file_path: Path) -> None:
         file_path.unlink()
-
-    def _delete_metadata(self, metadata_path: Path) -> None:
-        metadata_path.unlink()
 
     @staticmethod
     def _normalise_metadata(metadata: Any) -> Dict[str, str]:

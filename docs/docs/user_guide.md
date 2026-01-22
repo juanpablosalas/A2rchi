@@ -37,6 +37,19 @@ Finally, we support various **retrievers** and **embedding techniques** for docu
 These are configured via the configuration file.
 See the `Vector Store` section below for more details.
 
+### Agent tools (search + retrieval)
+
+The chat agent can use a few built-in tools to locate evidence. These are internal capabilities of the chat service:
+
+- **Metadata search**: find files by name/path/source metadata. Use free-text for partial matches, or exact filters with `key:value`.
+  Example: `mz_dilepton.py` or `relative_path:full/path/to/mz_dilepton.py`.
+- **Content search (grep)**: line-level search inside file contents; supports regex and context lines.
+  Example: `timeout error` with `before=2` and `after=2`.
+- **Document fetch**: pull full text for a specific file by hash (truncated with `max_chars`).
+- **Vectorstore search**: semantic retrieval of relevant passages when you don't know exact keywords.
+
+These tools are meant to be used together: search first, then fetch only the most relevant documents.
+
 ### Optional command line options
 
 In addition to the required `--name`, `--config/--config-dir`, `--env-file`, and `--services` arguments, the `a2rchi create` command accepts several useful flags:
@@ -50,6 +63,7 @@ In addition to the required `--name`, `--config/--config-dir`, `--env-file`, and
 7. **`--force`** / **`--dry-run`**: Force recreation of an existing deployment and/or show what would happen without actually deploying.
 
 You can inspect the available services and sources, together with descriptions, using `a2rchi list-services`.
+The CLI checks that host ports are free before deploying; if a port is already in use, adjust `services.*.external_port` (or `services.*.port` in `--hostmode`) and retry.
 
 > **GPU helpers**
 >
@@ -818,7 +832,7 @@ We support two modes, which you can specify in the configuration file under `ser
 
 The RAGAS mode will use the Ragas RAG evaluator module to return numerical values judging by 4 of their provided metrics: `answer_relevancy`, `faithfulness`, `context precision`, and `context relevancy`. More information about these metrics can be found on the [Ragas website](https://docs.ragas.io/en/stable/concepts/metrics/). 
 
-The SOURCES mode will check if the retrieved documents contain any of the correct sources. The matching is done by comparing a given metadata field for any source. The default is `display_name`, as per the configuration file (`data_manager:services:benchmarking:mode_settings:sources:default_match_field`). You can override this on a per-query basis by specifying the `sources_match_field` field in the queries file, as described above.
+The SOURCES mode will check if the retrieved documents contain any of the correct sources. The matching is done by comparing a given metadata field for any source. The default is `file_name`, as per the configuration file (`data_manager:services:benchmarking:mode_settings:sources:default_match_field`). You can override this on a per-query basis by specifying the `sources_match_field` field in the queries file, as described above.
 
 The configuration file should look like the following:
 
@@ -832,7 +846,7 @@ services:
       - "SOURCES"
     mode_settings:
       sources:
-        default_match_field: ["display_name"] # default field to match sources against, can be overridden in the queries file
+        default_match_field: ["file_name"] # default field to match sources against, can be overridden in the queries file
       ragas_settings:
         provider: <provider name> # can be one of OpenAI, HuggingFace, Ollama, and Anthropic
         evaluation_model_settings:

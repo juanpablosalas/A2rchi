@@ -78,7 +78,19 @@ class LocalFileManager:
             return
 
         resource = LocalFileResource(file_name=path.name, source_path=path, content=content, base_dir=base_dir)
+        effective_target_dir = self._resolve_target_dir(path, target_dir, base_dir)
         try:
-            persistence.persist_resource(resource, target_dir, overwrite=self.overwrite)
+            persistence.persist_resource(resource, effective_target_dir, overwrite=self.overwrite)
         except Exception as exc:
             logger.warning("Failed to persist local file %s: %s", path, exc)
+
+    def _resolve_target_dir(self, path: Path, target_dir: Path, base_dir: Optional[Path]) -> Path:
+        if not base_dir:
+            return target_dir
+        try:
+            relative_path = path.relative_to(base_dir)
+        except ValueError:
+            return target_dir
+        if relative_path.parent == Path("."):
+            return target_dir
+        return target_dir / relative_path.parent

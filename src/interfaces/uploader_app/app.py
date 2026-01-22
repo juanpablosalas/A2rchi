@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import shlex
 import time
 from pathlib import Path
-from typing import Callable, Optional, Dict
+from typing import Callable, Optional, Dict, List, Tuple
 from functools import wraps
 import secrets
 import re
@@ -210,7 +211,11 @@ class FlaskAppWrapper:
 
             title = metadata_source.get("ticket_id") or metadata_source.get("url")
             if not title:
-                title = metadata_source.get("display_name") or source_hash
+                title = (
+                    metadata_source.get("display_name")
+                    or metadata_source.get("file_name")
+                    or source_hash
+                )
 
             ts = metadata_source.get("modified_at") or metadata_source.get("created_at") or metadata_source.get("ingested_at") or ""
             sources_index.setdefault(source_type, []).append(
@@ -400,11 +405,12 @@ class FlaskAppWrapper:
             except Exception as exc:
                 logger.warning("Failed to load document content for %s: %s", file_hash, exc)
 
-            title = metadata.get("title") or metadata.get("display_name")
+            display_name = metadata.get("display_name") or metadata.get("file_name") or ""
+            title = metadata.get("title") or display_name
             return jsonify(
                 {
                     "document": document or "",
-                    "display_name": metadata.get("display_name") or "",
+                    "display_name": display_name,
                     "source_type": metadata.get("source_type") or "",
                     "original_url": metadata.get("url") or "",
                     "title": title or "",
@@ -499,46 +505,166 @@ class FlaskAppWrapper:
         limit = request.args.get("limit", default=5, type=int)
         window = request.args.get("window", default=-1, type=int)
         search_content = request.args.get("search_content", default="true").lower() != "false"
+        mode = (request.args.get("mode") or "").strip().lower()
+        regex = _parse_bool(request.args.get("regex"), default=False)
+        case_sensitive = _parse_bool(request.args.get("case_sensitive"), default=False)
+        max_matches_per_file = request.args.get("max_matches_per_file", default=3, type=int)
+        before = request.args.get("before", default=0, type=int)
+        after = request.args.get("after", default=0, type=int)
 
-        q_lower = query.lower()
+        filters, free_query = _parse_metadata_query(query)
+        q_lower = free_query.lower()
         hits = []
         self.catalog.refresh()
-        for resource_hash, path in self.catalog.iter_files():
-            metadata = self.catalog.get_metadata_for_hash(resource_hash) or {}
-            flattened_meta = _flatten_metadata(metadata)
-            meta_match = any(q_lower in k.lower() or q_lower in v.lower() for k, v in flattened_meta.items())
-
-            snippet = ""
-            content_match = False
-            text = ""
-            if search_content:
-                text = load_text_from_path(path) or ""
-                if text:
-                    idx = text.lower().find(q_lower)
-                    if idx != -1:
-                        content_match = True
-                        snippet = _collect_snippet(text, idx, len(query), window=window)
-                else:
-                    logger.error("No text content loaded from %s for search", path)
-
-            if meta_match and not content_match:
-                if not text:
-                    text = load_text_from_path(path) or ""
-                    if not text:
-                        logger.error("No text content loaded from %s for metadata match", path)
-                snippet = text
-
-            if meta_match or content_match:
+        if not search_content:
+            results = self.catalog.search_metadata(free_query, limit=limit, filters=filters)
+            for item in results:
+                metadata = item.get("metadata") or {}
+                snippet = (
+                    metadata.get("display_name")
+                    or metadata.get("file_name")
+                    or metadata.get("title")
+                    or metadata.get("url")
+                    or ""
+                )
                 hits.append(
                     {
-                        "hash": resource_hash,
-                        "path": str(path),
+                        "hash": item["hash"],
+                        "path": str(item["path"]),
                         "metadata": metadata,
                         "snippet": snippet,
                     }
                 )
-            if len(hits) >= limit:
-                break
+        else:
+            if mode == "grep":
+                if not free_query.strip():
+                    return jsonify({"hits": [], "total_duration": 0.0})
+                try:
+                    pattern = _compile_query_pattern(
+                        free_query, regex=regex, case_sensitive=case_sensitive
+                    )
+                except re.error as exc:
+                    return jsonify({"error": f"invalid_regex: {exc}"}), 400
+
+                candidate_hashes = None
+                candidate_metadata: Dict[str, Dict[str, object]] = {}
+                if filters:
+                    candidates = self.catalog.search_metadata("", limit=None, filters=filters)
+                    candidate_hashes = {item["hash"] for item in candidates}
+                    candidate_metadata = {
+                        item["hash"]: item.get("metadata") or {}
+                        for item in candidates
+                    }
+
+                if candidate_hashes is None:
+                    iterable = list(self.catalog.iter_files())
+                else:
+                    iterable = []
+                    for resource_hash in candidate_hashes:
+                        path = self.catalog.get_filepath_for_hash(resource_hash)
+                        if path:
+                            iterable.append((resource_hash, path))
+
+                for resource_hash, path in iterable:
+                    metadata = candidate_metadata.get(resource_hash) or self.catalog.get_metadata_for_hash(resource_hash) or {}
+                    text = load_text_from_path(path) or ""
+                    if not text:
+                        continue
+                    matches = _grep_text_lines(
+                        text,
+                        pattern,
+                        before=before,
+                        after=after,
+                        max_matches=max_matches_per_file,
+                    )
+                    if not matches:
+                        continue
+                    hits.append(
+                        {
+                            "hash": resource_hash,
+                            "path": str(path),
+                            "metadata": metadata,
+                            "matches": matches,
+                            "snippet": matches[0].get("text", ""),
+                        }
+                    )
+                    if len(hits) >= limit:
+                        break
+
+                total_duration = time.monotonic() - start_time
+                logger.debug(
+                    "Catalog grep search completed in %.3f seconds with %d hits",
+                    total_duration,
+                    len(hits),
+                )
+                return jsonify({"hits": hits, "total_duration": total_duration})
+
+            candidate_hashes = None
+            candidate_metadata: Dict[str, Dict[str, object]] = {}
+            if filters:
+                candidates = self.catalog.search_metadata("", limit=None, filters=filters)
+                candidate_hashes = {item["hash"] for item in candidates}
+                candidate_metadata = {
+                    item["hash"]: item.get("metadata") or {}
+                    for item in candidates
+                }
+
+            if candidate_hashes is None:
+                iterable = list(self.catalog.iter_files())
+            else:
+                iterable = []
+                for resource_hash in candidate_hashes:
+                    path = self.catalog.get_filepath_for_hash(resource_hash)
+                    if path:
+                        iterable.append((resource_hash, path))
+
+            for resource_hash, path in iterable:
+                metadata = candidate_metadata.get(resource_hash) or self.catalog.get_metadata_for_hash(resource_hash) or {}
+                flattened_meta = _flatten_metadata(metadata)
+                if q_lower:
+                    meta_match = any(q_lower in k.lower() or q_lower in v.lower() for k, v in flattened_meta.items())
+                else:
+                    meta_match = True
+
+                snippet = ""
+                content_match = False
+                text = ""
+                if q_lower:
+                    text = load_text_from_path(path) or ""
+                    if text:
+                        idx = text.lower().find(q_lower)
+                        if idx != -1:
+                            content_match = True
+                            snippet = _collect_snippet(text, idx, len(free_query), window=window)
+                    else:
+                        logger.error("No text content loaded from %s for search", path)
+
+                if meta_match and not content_match:
+                    if q_lower:
+                        if not text:
+                            text = load_text_from_path(path) or ""
+                            if not text:
+                                logger.error("No text content loaded from %s for metadata match", path)
+                        snippet = text
+                    else:
+                        snippet = (
+                            metadata.get("display_name")
+                            or metadata.get("file_name")
+                            or metadata.get("url")
+                            or ""
+                        )
+
+                if meta_match or content_match:
+                    hits.append(
+                        {
+                            "hash": resource_hash,
+                            "path": str(path),
+                            "metadata": metadata,
+                            "snippet": snippet,
+                        }
+                    )
+                if len(hits) >= limit:
+                    break
 
         total_duration = time.monotonic() - start_time
         logger.debug("Catalog search completed in %.3f seconds with %d hits", total_duration, len(hits))
@@ -566,6 +692,82 @@ def _flatten_metadata(data: Dict[str, object], prefix: str = "") -> Dict[str, st
         else:
             flattened[full_key] = "" if value is None else str(value)
     return flattened
+
+
+def _parse_metadata_query(query: str) -> Tuple[Dict[str, str] | List[Dict[str, str]], str]:
+    filters_groups: List[Dict[str, str]] = []
+    current_group: Dict[str, str] = {}
+    free_tokens = []
+    for token in shlex.split(query):
+        if token.upper() == "OR":
+            if current_group:
+                filters_groups.append(current_group)
+                current_group = {}
+            continue
+        if ":" in token:
+            key, value = token.split(":", 1)
+            key = key.strip()
+            value = value.strip()
+            if key and value:
+                current_group[key] = value
+                continue
+        free_tokens.append(token)
+
+    if current_group:
+        filters_groups.append(current_group)
+
+    if not filters_groups:
+        filters: Dict[str, str] | List[Dict[str, str]] = {}
+    elif len(filters_groups) == 1:
+        filters = filters_groups[0]
+    else:
+        filters = filters_groups
+
+    return filters, " ".join(free_tokens)
+
+
+def _parse_bool(value: Optional[str], *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    normalized = str(value).strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _compile_query_pattern(query: str, *, regex: bool, case_sensitive: bool) -> re.Pattern[str]:
+    flags = 0 if case_sensitive else re.IGNORECASE
+    pattern = query if regex else re.escape(query)
+    return re.compile(pattern, flags)
+
+
+def _grep_text_lines(
+    text: str,
+    pattern: re.Pattern[str],
+    *,
+    before: int = 0,
+    after: int = 0,
+    max_matches: int = 3,
+) -> list[Dict[str, object]]:
+    if max_matches <= 0:
+        return []
+    lines = text.splitlines()
+    matches: list[Dict[str, object]] = []
+    for idx, line in enumerate(lines):
+        if not pattern.search(line):
+            continue
+        match = {
+            "line": idx + 1,
+            "text": line,
+            "before": lines[max(0, idx - before) : idx] if before else [],
+            "after": lines[idx + 1 : idx + 1 + after] if after else [],
+        }
+        matches.append(match)
+        if len(matches) >= max_matches:
+            break
+    return matches
 
 
 def _collect_snippet(text: str, start_idx: int, query_len: int, window: int = -1) -> str:

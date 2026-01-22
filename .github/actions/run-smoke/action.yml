@@ -32,7 +32,7 @@ inputs:
   wait-url:
     description: Health endpoint to poll for readiness.
     required: false
-    default: http://localhost:7861/api/health
+    default: http://localhost:2786/api/health
   wait-attempts:
     description: Number of readiness checks before failing.
     required: false
@@ -44,7 +44,7 @@ inputs:
   base-url:
     description: Base URL passed to smoke.sh via BASE_URL.
     required: false
-    default: http://localhost:7861
+    default: http://localhost:2786
   use-podman:
     description: Use podman instead of docker.
     required: false

@@ -40,8 +40,10 @@ class TicketResource(BaseResource):
         extra.setdefault("source_type", self.source_type)
         if self.created_at:
             extra.setdefault("created_at", str(self.created_at))
+        if display_name:
+            extra["display_name"] = str(display_name)
 
-        return ResourceMetadata(display_name=str(display_name), extra=extra)
+        return ResourceMetadata(file_name=self.get_filename(), extra=extra)
 
     @staticmethod
     def _normalise_identifier(identifier: str) -> str:

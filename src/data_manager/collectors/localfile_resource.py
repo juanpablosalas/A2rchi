@@ -27,8 +27,7 @@ class LocalFileResource(BaseResource):
         return digest.hexdigest()[:12]
 
     def get_filename(self) -> str:
-        suffix = self.source_path.suffix
-        return f"{self.get_hash()}{suffix}" if suffix else self.get_hash()
+        return self.file_name or self.source_path.name
 
     def get_content(self) -> bytes:
         return self.content
@@ -51,7 +50,10 @@ class LocalFileResource(BaseResource):
         if self.base_dir:
             extra["base_path"] = str(self.base_dir.resolve())
 
-        return ResourceMetadata(display_name=display_name, extra=extra)
+        if display_name:
+            extra["display_name"] = display_name
+
+        return ResourceMetadata(file_name=self.get_filename(), extra=extra)
 
     def _relative_path(self) -> Optional[str]:
         if not self.base_dir:
