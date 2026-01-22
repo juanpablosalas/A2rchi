@@ -294,7 +294,9 @@ def format_html_output(config_data, config_name, timestamp,questions, total_resu
 
         # retrieved sources
         sources_metadata = q_data.get('sources_metadata', [])
-        retrieved_sources = [s['display_name'] for s in sources_metadata]
+        retrieved_sources = [
+            s.get("display_name") or s.get("file_name") or "" for s in sources_metadata
+        ]
         
         # Check if any expected source was retrieved
         expected_sources_set = set(expected_sources) 

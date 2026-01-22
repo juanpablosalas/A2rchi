@@ -3,16 +3,16 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import chromadb
 import nltk
-import yaml
 from chromadb.config import Settings
 from .loader_utils import select_loader
 from langchain_text_splitters.character import CharacterTextSplitter
 
 from src.data_manager.collectors.utils.index_utils import CatalogService
+from src.utils.env import read_secret
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,13 +22,27 @@ SUPPORTED_DISTANCE_METRICS = ["l2", "cosine", "ip"]
 class VectorStoreManager:
     """Encapsulates vectorstore configuration and synchronization."""
 
-    def __init__(self, *, config: Dict, global_config: Dict, data_path: str) -> None:
+    def __init__(
+        self,
+        *,
+        config: Dict,
+        global_config: Dict,
+        data_path: str,
+        pg_config: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.config = config
         self.global_config = global_config
         self.data_path = data_path
 
         self._data_manager_config = config["data_manager"]
         self._services_config = config.get("services", {})
+        if pg_config is None:
+            pg_config = {
+                "password": read_secret("PG_PASSWORD"),
+                **self._services_config["postgres"],
+            }
+        self._pg_config = pg_config
+        self._catalog = CatalogService(self.data_path, pg_config=self._pg_config)
 
         embedding_name = self._data_manager_config["embedding_name"]
         self.collection_name = (
@@ -105,7 +119,7 @@ class VectorStoreManager:
         """Synchronise filesystem documents with the vectorstore."""
         collection = self.fetch_collection()
 
-        sources = CatalogService.load_sources_catalog(self.data_path)
+        sources = CatalogService.load_sources_catalog(self.data_path, self._pg_config)
         collection_metadatas = collection.get(include=["metadatas"]).get("metadatas", [])
         files_in_vstore = self._collect_vstore_documents(collection_metadatas)
         files_in_data = self._collect_indexed_documents(sources)
@@ -147,7 +161,7 @@ class VectorStoreManager:
         if chroma_cfg.get("use_HTTP_chromadb_client"):
             logger.debug("Using ChromaDB HTTP client")
             return chromadb.HttpClient(
-                host=chroma_cfg["chromadb_host"],
+                host=chroma_cfg["host"],
                 port=chroma_cfg["port"],
                 settings=Settings(allow_reset=False, anonymized_telemetry=False),
             )
@@ -194,7 +208,7 @@ class VectorStoreManager:
             if loader is None:
                 return None
 
-            file_level_metadata = self._load_file_metadata(file_path)
+            file_level_metadata = self._load_file_metadata(filehash)
             try:
                 docs = loader.load()
             except Exception as exc:
@@ -332,37 +346,14 @@ class VectorStoreManager:
             files_in_vstore.setdefault(filehash, filename)
         return files_in_vstore
 
-    def _load_file_metadata(self, file_path: str) -> Dict[str, str]:
+    def _load_file_metadata(self, resource_hash: str) -> Dict[str, str]:
         """
-        Load persisted metadata stored alongside the document, if available.
+        Load persisted metadata stored in the catalog, if available.
         """
-        path = Path(file_path)
-        meta_path = path.with_suffix(f"{path.suffix}.meta.yaml")
-
-        if not meta_path.exists():
-            return {}
-
-        try:
-            with meta_path.open("r", encoding="utf-8") as fh:
-                metadata = yaml.safe_load(fh) or {}
-        except (yaml.YAMLError, OSError) as exc:
-            logger.warning(f"Failed to load metadata for {file_path}: {exc}")
-            return {}
-
-        if not isinstance(metadata, dict):
-            logger.warning(
-                f"Metadata file {meta_path} does not contain a mapping; ignoring."
-            )
-            return {}
-
+        metadata = self._catalog.get_metadata_for_hash(resource_hash) or {}
         sanitized: Dict[str, str] = {}
         for key, value in metadata.items():
-            if key is None:
+            if key is None or value is None:
                 continue
-            key_str = str(key)
-
-            if value is None:
-                continue
-            sanitized[key_str] = str(value)
-
+            sanitized[str(key)] = str(value)
         return sanitized

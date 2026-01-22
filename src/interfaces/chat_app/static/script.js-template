@@ -296,8 +296,12 @@ async function populateDropdown() {
         }
         configOptionsMeta.clear();
 
+        const options = Array.isArray(data.options) ? data.options : [];
+        if (!options.length) {
+            console.warn("No configs returned from /api/get_configs");
+        }
         // Populate the dropdown with options from the API response
-        response.options.forEach(optionData => {
+        options.forEach(optionData => {
             if (!optionData || !optionData.name) return;
             const normalizedDescription = optionData.description || "";
             configOptionsMeta.set(optionData.name, {
@@ -647,6 +651,20 @@ const appendStreamStep = (incomingChatDiv, event) => {
 
 const flushToUi = () => new Promise(requestAnimationFrame);
 
+const normalizeStreamChunk = (chunk) => {
+    if (chunk === null || chunk === undefined) return "";
+    return typeof chunk === "string" ? chunk : String(chunk);
+};
+
+const mergeStreamChunk = (current, next) => {
+    const nextText = normalizeStreamChunk(next);
+    if (!current) return nextText;
+    if (!nextText) return current;
+    if (nextText.startsWith(current)) return nextText;
+    if (current.startsWith(nextText)) return current;
+    return current + nextText;
+};
+
 const finalizeIncomingChat = (incomingChatDiv, pElement, responseData) => {
     if (responseData && responseData.response !== undefined) {
         try {
@@ -775,6 +793,31 @@ const getChatResponseStream = async (incomingChatDiv, isRefresh=false) => {
     };
 
     let finalized = false;
+    let streamedText = "";
+    let streamingParagraph = null;
+
+    const ensureStreamingParagraph = () => {
+        if (!streamingParagraph) {
+            streamingParagraph = document.createElement("p");
+            streamingParagraph.classList.add("streaming-response");
+            pElement.appendChild(streamingParagraph);
+        }
+        if (!pElement.isConnected) {
+            incomingChatDiv.querySelector("#loading-text")?.remove();
+            incomingChatDiv.querySelector(".typing-animation")?.remove();
+            incomingChatDiv.querySelector(".chat-details")?.appendChild(pElement);
+        }
+    };
+
+    const applyStreamChunk = (chunk) => {
+        const nextText = mergeStreamChunk(streamedText, chunk);
+        if (nextText === streamedText) return false;
+        streamedText = nextText;
+        ensureStreamingParagraph();
+        streamingParagraph.textContent = streamedText;
+        chatContainer.scrollTo(0, chatContainer.scrollHeight);
+        return true;
+    };
 
     try {
         const response = await fetchWithTimeout(STREAM_ENDPOINT, requestOptions);
@@ -807,8 +850,18 @@ const getChatResponseStream = async (incomingChatDiv, isRefresh=false) => {
                 }
 
                 if (event.type === "step") {
-                    appendStreamStep(incomingChatDiv, event);
-                    await flushToUi();
+                    if (event.step_type === "agent") {
+                        if (applyStreamChunk(event.content)) {
+                            await flushToUi();
+                        }
+                    } else {
+                        appendStreamStep(incomingChatDiv, event);
+                        await flushToUi();
+                    }
+                } else if (event.type === "chunk") {
+                    if (applyStreamChunk(event.content)) {
+                        await flushToUi();
+                    }
                 } else if (event.type === "meta") {
                     continue;
                 } else if (event.type === "final") {

@@ -2,11 +2,18 @@ name: pr_preview_config
 
 services:
   postgres:
-    port: 34567
+    port: 3456
   chat_app:
-    port: 27861
-    external_port: 27861
+    port: 2786
+    external_port: 2786
     trained_on: "Dummy data for preview"
+  chromadb:
+    host: chromadb
+    port: 8123
+    external_port: 8123
+  data_manager:
+    port: 4242
+    external_port: 4242
 
 data_manager:
   embedding_name: HuggingFaceEmbeddings
