@@ -277,7 +277,7 @@ def restart(
     podman: bool,
     verbosity: int,
 ):
-    """Restart a specific service in an existing deployment."""
+    """Restart a specific service in an existing deployment while reusing its configured ports."""
     setup_cli_logging(verbosity=verbosity)
 
     if not podman and not check_docker_available():
@@ -380,6 +380,7 @@ def restart(
             config_manager,
             secrets_manager,
             host_mode=host_mode,
+            allow_port_reuse=True,
         )
 
     deployment_manager = DeploymentManager(use_podman=podman)
