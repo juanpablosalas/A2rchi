@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, Callable, Dict, List, Sequence
 
 from langchain_core.documents import Document
+import asyncio
+import nest_asyncio
 from langchain.agents.middleware import TodoListMiddleware, LLMToolSelectorMiddleware
 
 from src.utils.logging import get_logger
@@ -13,6 +15,7 @@ from src.a2rchi.pipelines.agents.tools import (
     create_file_search_tool,
     create_metadata_search_tool,
     create_retriever_tool,
+    initialize_mcp_client,
     RemoteCatalogClient,
 )
 from src.a2rchi.pipelines.agents.utils.history_utils import infer_speaker
@@ -31,6 +34,7 @@ class CMSCompOpsAgent(BaseReActAgent):
     ) -> None:
         super().__init__(config, *args, **kwargs)
 
+        self.mcp_client = None
         self.catalog_service = RemoteCatalogClient.from_deployment_config(self.config)
         self._vector_retrievers = None
         self._vector_tool = None
@@ -59,6 +63,7 @@ class CMSCompOpsAgent(BaseReActAgent):
             ),
             store_docs=self._store_documents,
         )
+        
         fetch_tool = create_document_fetch_tool(
             self.catalog_service,
             description=(
@@ -66,7 +71,37 @@ class CMSCompOpsAgent(BaseReActAgent):
                 "Use this sparingly to pull only the most relevant files."
             ),
         )
-        return [file_search_tool, metadata_search_tool, fetch_tool]
+
+        all_tools = [file_search_tool, metadata_search_tool, fetch_tool]
+
+        try:
+            nest_asyncio.apply()
+
+            # 1. Fetch the tools (async)
+            client, mcp_tools = asyncio.run(initialize_mcp_client())
+            self.mcp_client = client  # Keep client alive
+
+            # 2. Patch tools to support synchronous execution
+            # This wrapper allows the sync agent to call the async tools
+            def make_synchronous(async_tool):
+                def sync_wrapper(*args, **kwargs):
+                    # We reuse the existing client session via the closure of the original tool
+                    return asyncio.run(async_tool.coroutine(*args, **kwargs))
+
+                # Assign the wrapper to the tool's 'func' attribute (standard LangChain sync entry point)
+                async_tool.func = sync_wrapper
+                return async_tool
+
+            # Apply the patch to all fetched tools
+            if mcp_tools:
+                synchronous_mcp_tools = [make_synchronous(t) for t in mcp_tools]
+                all_tools.extend(synchronous_mcp_tools)
+                logger.info(f"Loaded and patched {len(synchronous_mcp_tools)} MCP tools for sync execution.")
+
+        except Exception as e:
+            logger.error(f"Failed to load MCP tools: {e}", exc_info=True)
+
+        return all_tools
     
     # def _build_static_middleware(self) -> List[Callable]:
     #     """
@@ -102,10 +137,10 @@ class CMSCompOpsAgent(BaseReActAgent):
 
     def _prepare_agent_inputs(self, **kwargs) -> Dict[str, Any]:
         """Prepare agent state and formatted inputs shared by invoke/stream."""
-        
+
         # event-level memory (which documents were retrieved)
         memory = self.start_run_memory()
-       
+
         # refresh vs connection
         vectorstore = kwargs.get("vectorstore")
         if vectorstore:
@@ -132,7 +167,7 @@ class CMSCompOpsAgent(BaseReActAgent):
         """Instantiate or refresh the vectorstore retriever tool using hybrid retrieval."""
         retrievers_cfg = self.dm_config.get("retrievers", {})
         hybrid_cfg = retrievers_cfg.get("hybrid_retriever", {})
-        
+
         k = hybrid_cfg["num_documents_to_retrieve"]
         bm25_weight = hybrid_cfg["bm25_weight"]
         semantic_weight = hybrid_cfg["semantic_weight"]

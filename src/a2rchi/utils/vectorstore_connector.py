@@ -43,7 +43,7 @@ class VectorstoreConnector:
         """
         Function to update the vectorstore connection.
         """
-        
+
         # connect to chromadb server
         client = None
         if self.use_HTTP_chromadb_client:
@@ -68,7 +68,7 @@ class VectorstoreConnector:
         logger.debug("Updated vectorstore connection")
 
         return vectorstore
-    
+
     def get_vectorstore(self):
         """
         Public method to get the updated vectorstore connection.

@@ -5,6 +5,7 @@ from .local_files import (
     RemoteCatalogClient,
 )
 from .retriever import create_retriever_tool
+from .mcp import initialize_mcp_client
 
 __all__ = [
     "create_document_fetch_tool",
@@ -12,4 +13,5 @@ __all__ = [
     "create_metadata_search_tool",
     "RemoteCatalogClient",
     "create_retriever_tool",
+    "initialize_mcp_client",
 ]

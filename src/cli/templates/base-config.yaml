@@ -3,7 +3,7 @@ name: {{ name | default("default", true) }}
 global:
   DATA_PATH: "{{ global.DATA_PATH | default('/root/data/', true) }}"
   ACCOUNTS_PATH: "{{ global.ACCOUNTS_PATH | default('/root/.accounts/', true) }}"
-  ACCEPTED_FILES: 
+  ACCEPTED_FILES:
     {%- for file_type in global.ACCEPTED_FILES | default(['.txt', '.html', '.pdf']) %}
     - "{{ file_type }}"
     {%- endfor %}
@@ -12,14 +12,14 @@ global:
   verbosity: {{ verbosity | default(3, true) }}
 
 services:
-  benchmarking: 
+  benchmarking:
     out_dir: {{ services.benchmarking.out_dir | default(".", true) }}
     queries_path: {{ services.benchmarking.queries_path | default("queries", true) }}
-    modes: 
+    modes:
       {%- for mode in services.benchmarking.modes | default(["SOURCES", "RAGAS"]) %}
       - {{ mode }}
       {%- endfor %}
-    mode_settings: 
+    mode_settings:
       sources_settings:
         default_match_field: {{ services.benchmarking.mode_settings.sources_settings.default_match_field | default("file_name", true) }} # metadata field to check for source matching
       ragas_settings: 
@@ -52,7 +52,7 @@ services:
     update_time: {{ services.piazza.update_time | default(60, true) }}
   mattermost:
     update_time: {{ services.mattermost.update_time | default(60, true) }}
-  redmine_mailbox: 
+  redmine_mailbox:
     pipeline: {{ services.redmine_mailbox.pipeline | default('CMSCompOpsAgent', true) }}
     url: {{ services.redmine_mailbox.url | default('', true) }}
     project: {{ services.redmine_mailbox.project | default('', true) }}
@@ -135,7 +135,7 @@ data_manager:
         model_name: {{ data_manager.embedding_class_map.HuggingFaceEmbeddings.kwargs.model_name | default('sentence-transformers/all-MiniLM-L6-v2', true) }}
         model_kwargs:
           device: {{ data_manager.embedding_class_map.HuggingFaceEmbeddings.kwargs.model_kwargs.device | default('cpu', true) }}
-        encode_kwargs: 
+        encode_kwargs:
           normalize_embeddings: {{ data_manager.embedding_class_map.HuggingFaceEmbeddings.kwargs.encode_kwargs.normalize_embeddings | default(true, true) }}
       similarity_score_reference: {{ data_manager.embedding_class_map.HuggingFaceEmbeddings.similarity_score_reference | default(10, true) }}
       query_embedding_instructions: {{ data_manager.embedding_class_map.HuggingFaceEmbeddings.query_embedding_instructions | default("null", true) }}
@@ -189,8 +189,8 @@ data_manager:
         visible: {{ data_manager.sources.links.selenium_scraper.selenium_scraper.visible | default(false, true) }}
         use_for_scraping: {{ data_manager.sources.links.selenium_scraper.use_for_scraping | default(false, true) }}
         selenium_class: {{  data_manager.sources.links.selenium_scraper.selenium_class | default('CERNSSOAuthenticator', true)  }}
-        selenium_class_map: 
-          CERNSSOAuthenticator: 
+        selenium_class_map:
+          CERNSSOAuthenticator:
             class: {{ data_manager.sources.links.selenium_scraper.selenium_class_map.CERNSSOAuthenticator.class | default('CERNSSOAuthenticator', true) }}
             kwargs:
               headless:  {{ data_manager.sources.links.selenium_scraper.selenium_class_map.CERNSSOAuthenticator.kwargs.headless | default(true, true) }}
@@ -370,6 +370,7 @@ a2rchi:
         max_tokens: {{ a2rchi.model_class_map.OllamaInterface.kwargs.max_tokens | default(1000, true) }}
         url: {{ a2rchi.model_class_map.OllamaInterface.kwargs.url | default("http://localhost:7870", true) }}
   chain_update_time: {{ a2rchi.chain_update_time | default(10, true) }}
+  mcp_servers: {{ a2rchi.mcp_servers | default({}, true) }}
 
 utils:
   sso:
