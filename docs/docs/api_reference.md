@@ -240,7 +240,7 @@ Controls ingestion sources and vector store behaviour.
 Defines pipelines and model routing.
 
 - **pipelines:** List of pipeline names to load (e.g., `QAPipeline`).
-- **pipeline_map:** Per-pipeline configuration of prompts, models, and token limits.
+- **pipeline_map:** Per-pipeline configuration of prompts, models, token limits, and ReAct recursion limits (`recursion_limit`, default `100`).
 - **model_class_map:** Definitions for each model family (base model names, provider-specific kwargs).
 - **chain_update_time:** Polling interval for hot-reloading chains.
 
