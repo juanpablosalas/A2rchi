@@ -266,6 +266,7 @@ a2rchi:
         required:
           image_processing_model: {{ a2rchi.pipeline_map.ImageProcessingPipeline.models.required.image_processing_model | default('HuggingFaceImageLLM', true) }}
     CMSCompOpsAgent:
+      recursion_limit: {{ a2rchi.pipeline_map.CMSCompOpsAgent.recursion_limit | default(100, true) }}
       prompts:
         required:
           agent_prompt: {% if a2rchi.pipeline_map.CMSCompOpsAgent.prompts.required.agent_prompt %}"{{ a2rchi.pipeline_map.CMSCompOpsAgent.prompts.required.agent_prompt }}"{% else %}null{% endif %}
