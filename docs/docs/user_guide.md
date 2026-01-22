@@ -711,7 +711,7 @@ A2RCHI automatically synchronizes your data directory with the vector store:
 
 1. **Adding documents**: New files in the data directory are automatically chunked, embedded, and added to the collection
 2. **Removing documents**: Files deleted from the data directory are removed from the collection
-3. **Source tracking**: Each ingested artifact is recorded in the unified `index.yaml` file as `<resource-hash>: <relative file path>` inside the data directory
+3. **Source tracking**: Each ingested artifact is recorded in the Postgres catalog (`resources` table) with its resource hash and relative file path
 
 ### Hybrid Search
 

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+import psycopg2
+import psycopg2.extras
 from langchain_core.documents import Document
 
 from src.data_manager.collectors.utils.metadata import INDEXED_METADATA_KEYS
@@ -39,32 +40,32 @@ _METADATA_COLUMN_MAP = {key: key for key in INDEXED_METADATA_KEYS}
 
 @dataclass
 class CatalogService:
-    """Expose lightweight access to catalogued resources and metadata."""
+    """Expose lightweight access to catalogued resources and metadata (Postgres)."""
 
     data_path: Path | str
+    pg_config: Dict[str, Any]
     include_extensions: Sequence[str] = field(default_factory=lambda: sorted(DEFAULT_TEXT_EXTENSIONS))
-    db_filename: str = "catalog.sqlite"
     # in memory indices
     _file_index: Dict[str, str] = field(init=False, default_factory=dict)
     _metadata_index: Dict[str, str] = field(init=False, default_factory=dict)
 
     def __post_init__(self) -> None:
         self.data_path = Path(self.data_path)
-        self.db_path = self.data_path / self.db_filename
         if self.include_extensions:
             self.include_extensions = tuple(ext.lower() for ext in self.include_extensions)
+        self._validate_pg_config()
         self._init_db()
         self.refresh()
 
     def refresh(self) -> None:
-        """Reload file and metadata indices from disk."""
-        logger.debug("Refreshing catalog indices from %s", self.db_path)
+        """Reload file and metadata indices from Postgres."""
+        logger.debug("Refreshing catalog indices from Postgres")
         self._file_index = {}
         self._metadata_index = {}
-        if not self.db_path.exists():
-            return
         with self._connect() as conn:
-            rows = conn.execute("SELECT resource_hash, path FROM resources").fetchall()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute("SELECT resource_hash, path FROM resources")
+                rows = cursor.fetchall()
         for row in rows:
             resource_hash = row["resource_hash"]
             stored_path = row["path"]
@@ -99,74 +100,74 @@ class CatalogService:
         extra_text = _build_extra_text(payload)
 
         with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO resources (
-                    resource_hash,
-                    path,
-                    file_name,
-                    display_name,
-                    source_type,
-                    url,
-                    ticket_id,
-                    suffix,
-                    size_bytes,
-                    original_path,
-                    base_path,
-                    relative_path,
-                    created_at,
-                    modified_at,
-                    ingested_at,
-                    extra_json,
-                    extra_text
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(resource_hash) DO UPDATE SET
-                    path=excluded.path,
-                    file_name=excluded.file_name,
-                    display_name=excluded.display_name,
-                    source_type=excluded.source_type,
-                    url=excluded.url,
-                    ticket_id=excluded.ticket_id,
-                    suffix=excluded.suffix,
-                    size_bytes=excluded.size_bytes,
-                    original_path=excluded.original_path,
-                    base_path=excluded.base_path,
-                    relative_path=excluded.relative_path,
-                    created_at=excluded.created_at,
-                    modified_at=excluded.modified_at,
-                    ingested_at=excluded.ingested_at,
-                    extra_json=excluded.extra_json,
-                    extra_text=excluded.extra_text
-                """,
-                (
-                    resource_hash,
-                    path,
-                    file_name,
-                    display_name or "",
-                    source_type,
-                    payload.get("url"),
-                    payload.get("ticket_id"),
-                    payload.get("suffix"),
-                    _coerce_int(payload.get("size_bytes")),
-                    payload.get("original_path"),
-                    payload.get("base_path"),
-                    payload.get("relative_path"),
-                    payload.get("created_at"),
-                    payload.get("modified_at"),
-                    payload.get("ingested_at"),
-                    extra_json,
-                    extra_text,
-                ),
-            )
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO resources (
+                        resource_hash,
+                        path,
+                        file_name,
+                        display_name,
+                        source_type,
+                        url,
+                        ticket_id,
+                        suffix,
+                        size_bytes,
+                        original_path,
+                        base_path,
+                        relative_path,
+                        created_at,
+                        modified_at,
+                        ingested_at,
+                        extra_json,
+                        extra_text
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT(resource_hash) DO UPDATE SET
+                        path=excluded.path,
+                        file_name=excluded.file_name,
+                        display_name=excluded.display_name,
+                        source_type=excluded.source_type,
+                        url=excluded.url,
+                        ticket_id=excluded.ticket_id,
+                        suffix=excluded.suffix,
+                        size_bytes=excluded.size_bytes,
+                        original_path=excluded.original_path,
+                        base_path=excluded.base_path,
+                        relative_path=excluded.relative_path,
+                        created_at=excluded.created_at,
+                        modified_at=excluded.modified_at,
+                        ingested_at=excluded.ingested_at,
+                        extra_json=excluded.extra_json,
+                        extra_text=excluded.extra_text
+                    """,
+                    (
+                        resource_hash,
+                        path,
+                        file_name,
+                        display_name or "",
+                        source_type,
+                        payload.get("url"),
+                        payload.get("ticket_id"),
+                        payload.get("suffix"),
+                        _coerce_int(payload.get("size_bytes")),
+                        payload.get("original_path"),
+                        payload.get("base_path"),
+                        payload.get("relative_path"),
+                        payload.get("created_at"),
+                        payload.get("modified_at"),
+                        payload.get("ingested_at"),
+                        extra_json,
+                        extra_text,
+                    ),
+                )
 
         self._file_index[resource_hash] = path
         self._metadata_index[resource_hash] = path
 
     def delete_resource(self, resource_hash: str) -> None:
-        if not self.db_path.exists():
-            return
         with self._connect() as conn:
-            conn.execute("DELETE FROM resources WHERE resource_hash = ?", (resource_hash,))
+            with conn.cursor() as cursor:
+                cursor.execute("DELETE FROM resources WHERE resource_hash = %s", (resource_hash,))
         self._file_index.pop(resource_hash, None)
         self._metadata_index.pop(resource_hash, None)
 
@@ -194,23 +195,23 @@ class CatalogService:
             value = kwargs[metadata_field]
 
         matches: List[Tuple[str, Dict[str, Any]]] = []
-        if not self.db_path.exists():
-            return matches
 
         column = _METADATA_COLUMN_MAP.get(metadata_field)
         with self._connect() as conn:
-            if column:
-                if value is None:
-                    rows = conn.execute(
-                        f"SELECT * FROM resources WHERE {column} IS NOT NULL AND {column} != ''"
-                    ).fetchall()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                if column:
+                    if value is None:
+                        cursor.execute(
+                            f"SELECT * FROM resources WHERE {column} IS NOT NULL AND {column} != ''"
+                        )
+                    else:
+                        cursor.execute(
+                            f"SELECT * FROM resources WHERE {column} = %s",
+                            (str(value),),
+                        )
                 else:
-                    rows = conn.execute(
-                        f"SELECT * FROM resources WHERE {column} = ?",
-                        (str(value),),
-                    ).fetchall()
-            else:
-                rows = conn.execute("SELECT * FROM resources").fetchall()
+                    cursor.execute("SELECT * FROM resources")
+                rows = cursor.fetchall()
 
         expected = str(value) if value is not None else None
         for row in rows:
@@ -233,8 +234,6 @@ class CatalogService:
     ) -> List[Dict[str, Any]]:
         if not query and not filters:
             return []
-        if not self.db_path.exists():
-            return []
 
         where_clauses: List[str] = []
         params: List[object] = []
@@ -254,10 +253,10 @@ class CatalogService:
                     for key, value in group.items():
                         column = _METADATA_COLUMN_MAP.get(key)
                         if column:
-                            sub_clauses.append(f"{column} = ?")
+                            sub_clauses.append(f"{column} = %s")
                             group_params.append(str(value))
                         else:
-                            sub_clauses.append("extra_text LIKE ?")
+                            sub_clauses.append("extra_text LIKE %s")
                             group_params.append(f"%{key}:{value}%")
                     if sub_clauses:
                         group_clauses.append("(" + " AND ".join(sub_clauses) + ")")
@@ -269,8 +268,8 @@ class CatalogService:
             like = f"%{query}%"
             where_clauses.append(
                 (
-                    "(file_name LIKE ? OR source_type LIKE ? OR url LIKE ? OR ticket_id LIKE ? "
-                    "OR path LIKE ? OR original_path LIKE ? OR relative_path LIKE ? OR extra_text LIKE ?)"
+                    "(file_name LIKE %s OR source_type LIKE %s OR url LIKE %s OR ticket_id LIKE %s "
+                    "OR path LIKE %s OR original_path LIKE %s OR relative_path LIKE %s OR extra_text LIKE %s)"
                 )
             )
             params.extend([like, like, like, like, like, like, like, like])
@@ -280,11 +279,13 @@ class CatalogService:
             sql += " WHERE " + " AND ".join(where_clauses)
         sql += " ORDER BY COALESCE(modified_at, created_at, ingested_at, '') DESC"
         if limit is not None:
-            sql += " LIMIT ?"
+            sql += " LIMIT %s"
             params.append(int(limit))
 
         with self._connect() as conn:
-            rows = conn.execute(sql, params).fetchall()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute(sql, params)
+                rows = cursor.fetchall()
 
         results: List[Dict[str, Any]] = []
         for row in rows:
@@ -310,12 +311,12 @@ class CatalogService:
             yield resource_hash, path
 
     def get_metadata_for_hash(self, hash: str) -> Optional[Dict[str, Any]]:
-        if not self.db_path.exists():
-            return None
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM resources WHERE resource_hash = ?", (hash,)
-            ).fetchone()
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute(
+                    "SELECT * FROM resources WHERE resource_hash = %s", (hash,)
+                )
+                row = cursor.fetchone()
         if not row:
             return None
         return self._row_to_metadata(row)
@@ -341,18 +342,20 @@ class CatalogService:
         return doc
 
     @classmethod
-    def load_sources_catalog(cls, data_path: Path | str, filename: Optional[str] = None) -> Dict[str, str]:
+    def load_sources_catalog(
+        cls,
+        data_path: Path | str,
+        pg_config: Dict[str, Any],
+    ) -> Dict[str, str]:
         """
         Convenience helper that returns the resource index mapping with absolute paths.
         """
         base_path = Path(data_path)
-        db_path = base_path / cls.db_filename
-        if not db_path.exists():
-            return {}
 
-        with sqlite3.connect(db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT resource_hash, path FROM resources").fetchall()
+        with psycopg2.connect(**pg_config) as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cursor:
+                cursor.execute("SELECT resource_hash, path FROM resources")
+                rows = cursor.fetchall()
 
         resolved: Dict[str, str] = {}
         for row in rows:
@@ -364,71 +367,65 @@ class CatalogService:
         return resolved
 
     def _init_db(self) -> None:
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
-            conn.execute("PRAGMA foreign_keys = ON")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS resources (
-                    resource_hash TEXT PRIMARY KEY,
-                    path TEXT NOT NULL,
-                    file_name TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    source_type TEXT NOT NULL,
-                    url TEXT,
-                    ticket_id TEXT,
-                    suffix TEXT,
-                    size_bytes INTEGER,
-                    original_path TEXT,
-                    base_path TEXT,
-                    relative_path TEXT,
-                    created_at TEXT,
-                    modified_at TEXT,
-                    ingested_at TEXT,
-                    extra_json TEXT NOT NULL,
-                    extra_text TEXT
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS resources (
+                        resource_hash TEXT PRIMARY KEY,
+                        path TEXT NOT NULL,
+                        file_name TEXT NOT NULL,
+                        display_name TEXT NOT NULL,
+                        source_type TEXT NOT NULL,
+                        url TEXT,
+                        ticket_id TEXT,
+                        suffix TEXT,
+                        size_bytes BIGINT,
+                        original_path TEXT,
+                        base_path TEXT,
+                        relative_path TEXT,
+                        created_at TEXT,
+                        modified_at TEXT,
+                        ingested_at TEXT,
+                        extra_json TEXT NOT NULL,
+                        extra_text TEXT
+                    )
+                    """
                 )
-                """
-            )
-            self._ensure_column(conn, "file_name", "TEXT")
-            self._ensure_column(conn, "extra_text", "TEXT")
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_resources_source_type ON resources(source_type)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_resources_url ON resources(url)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_resources_ticket_id ON resources(ticket_id)"
-            )
-            self._backfill_file_names(conn)
+                self._ensure_column(cursor, "file_name", "TEXT")
+                self._ensure_column(cursor, "extra_text", "TEXT")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_resources_source_type ON resources(source_type)"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_resources_url ON resources(url)"
+                )
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_resources_ticket_id ON resources(ticket_id)"
+                )
+                self._backfill_file_names(cursor)
 
-    def _connect(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _connect(self) -> psycopg2.extensions.connection:
+        return psycopg2.connect(**self.pg_config)
 
-    def _ensure_column(self, conn: sqlite3.Connection, column: str, column_type: str) -> None:
-        rows = conn.execute("PRAGMA table_info(resources)").fetchall()
-        existing = {row["name"] for row in rows}
-        if column in existing:
-            return
-        conn.execute(f"ALTER TABLE resources ADD COLUMN {column} {column_type}")
+    def _ensure_column(self, cursor: psycopg2.extensions.cursor, column: str, column_type: str) -> None:
+        cursor.execute(f"ALTER TABLE resources ADD COLUMN IF NOT EXISTS {column} {column_type}")
 
-    def _backfill_file_names(self, conn: sqlite3.Connection) -> None:
-        rows = conn.execute(
+    def _backfill_file_names(self, cursor: psycopg2.extensions.cursor) -> None:
+        cursor.execute(
             "SELECT resource_hash, path, file_name FROM resources WHERE file_name IS NULL OR file_name = ''"
-        ).fetchall()
+        )
+        rows = cursor.fetchall()
         for row in rows:
-            stored_path = row["path"]
+            stored_path = row[1]
             if not stored_path:
                 continue
             file_name = Path(stored_path).name
             if not file_name:
                 continue
-            conn.execute(
-                "UPDATE resources SET file_name = ? WHERE resource_hash = ?",
-                (file_name, row["resource_hash"]),
+            cursor.execute(
+                "UPDATE resources SET file_name = %s WHERE resource_hash = %s",
+                (file_name, row[0]),
             )
 
     def _resolve_path(self, stored_path: str) -> Path:
@@ -437,7 +434,7 @@ class CatalogService:
             path = (self.data_path / path).resolve()
         return path
 
-    def _row_to_metadata(self, row: sqlite3.Row) -> Dict[str, str]:
+    def _row_to_metadata(self, row: Dict[str, Any]) -> Dict[str, str]:
         data = dict(row)
         metadata: Dict[str, str] = {}
 
@@ -470,6 +467,12 @@ class CatalogService:
                 metadata["file_name"] = Path(stored_path).name
 
         return metadata
+
+    def _validate_pg_config(self) -> None:
+        required = ("host", "port", "user", "database", "password")
+        missing = [key for key in required if self.pg_config.get(key) in (None, "")]
+        if missing:
+            raise ValueError(f"Postgres config missing required fields: {', '.join(missing)}")
 
 
 def _coerce_int(value: Optional[str]) -> Optional[int]:

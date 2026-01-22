@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 import chromadb
 import nltk
@@ -12,6 +12,7 @@ from .loader_utils import select_loader
 from langchain_text_splitters.character import CharacterTextSplitter
 
 from src.data_manager.collectors.utils.index_utils import CatalogService
+from src.utils.env import read_secret
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -21,14 +22,27 @@ SUPPORTED_DISTANCE_METRICS = ["l2", "cosine", "ip"]
 class VectorStoreManager:
     """Encapsulates vectorstore configuration and synchronization."""
 
-    def __init__(self, *, config: Dict, global_config: Dict, data_path: str) -> None:
+    def __init__(
+        self,
+        *,
+        config: Dict,
+        global_config: Dict,
+        data_path: str,
+        pg_config: Optional[Dict[str, Any]] = None,
+    ) -> None:
         self.config = config
         self.global_config = global_config
         self.data_path = data_path
-        self._catalog = CatalogService(self.data_path)
 
         self._data_manager_config = config["data_manager"]
         self._services_config = config.get("services", {})
+        if pg_config is None:
+            pg_config = {
+                "password": read_secret("PG_PASSWORD"),
+                **self._services_config["postgres"],
+            }
+        self._pg_config = pg_config
+        self._catalog = CatalogService(self.data_path, pg_config=self._pg_config)
 
         embedding_name = self._data_manager_config["embedding_name"]
         self.collection_name = (
@@ -105,7 +119,7 @@ class VectorStoreManager:
         """Synchronise filesystem documents with the vectorstore."""
         collection = self.fetch_collection()
 
-        sources = CatalogService.load_sources_catalog(self.data_path)
+        sources = CatalogService.load_sources_catalog(self.data_path, self._pg_config)
         collection_metadatas = collection.get(include=["metadatas"]).get("metadatas", [])
         files_in_vstore = self._collect_vstore_documents(collection_metadatas)
         files_in_data = self._collect_indexed_documents(sources)
