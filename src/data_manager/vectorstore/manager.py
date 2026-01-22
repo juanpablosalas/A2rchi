@@ -120,12 +120,18 @@ class VectorStoreManager:
         collection = self.fetch_collection()
 
         sources = CatalogService.load_sources_catalog(self.data_path, self._pg_config)
+        logger.info(f"Loaded {len(sources)} sources from catalog")
         collection_metadatas = collection.get(include=["metadatas"]).get("metadatas", [])
         files_in_vstore = self._collect_vstore_documents(collection_metadatas)
         files_in_data = self._collect_indexed_documents(sources)
 
         hashes_in_vstore = set(files_in_vstore.keys())
         hashes_in_data = set(files_in_data.keys())
+
+        logger.info(f"Files in catalog: {len(hashes_in_data)}, Files in vectorstore: {len(hashes_in_vstore)}")
+        if hashes_in_data != hashes_in_vstore:
+            logger.debug(f"Hashes in data (first 10): {list(hashes_in_data)[:10]}")
+            logger.debug(f"Hashes in vstore (first 10): {list(hashes_in_vstore)[:10]}")
 
         if hashes_in_data == hashes_in_vstore:
             logger.info("Vectorstore is up to date")
@@ -309,14 +315,18 @@ class VectorStoreManager:
         Build a mapping of resource hash -> absolute path from the persisted index.
         """
         files_in_data: Dict[str, str] = {}
+        missing_files = []
+        skipped_dirs = []
         for resource_hash, stored_path in sources.items():
             path = Path(stored_path)
             if not path.exists():
+                missing_files.append((resource_hash, stored_path))
                 logger.warning(
                     f"Indexed resource '{resource_hash}' points to missing file: {stored_path}"
                 )
                 continue
             if path.is_dir():
+                skipped_dirs.append((resource_hash, stored_path))
                 logger.debug(
                     f"Indexed resource '{resource_hash}' points to a directory; skipping."
                 )
@@ -330,6 +340,12 @@ class VectorStoreManager:
                 continue
 
             files_in_data[resource_hash] = str(path)
+
+        if missing_files:
+            logger.warning(f"Found {len(missing_files)} missing files in catalog (first 5): {missing_files[:5]}")
+        if skipped_dirs:
+            logger.debug(f"Skipped {len(skipped_dirs)} directories in catalog")
+        logger.info(f"Collected {len(files_in_data)} valid indexed documents (after filtering missing/dirs)")
 
         return files_in_data
 

@@ -63,7 +63,7 @@ class CMSCompOpsAgent(BaseReActAgent):
             ),
             store_docs=self._store_documents,
         )
-        
+
         fetch_tool = create_document_fetch_tool(
             self.catalog_service,
             description=(
@@ -102,7 +102,7 @@ class CMSCompOpsAgent(BaseReActAgent):
             logger.error(f"Failed to load MCP tools: {e}", exc_info=True)
 
         return all_tools
-    
+
     # def _build_static_middleware(self) -> List[Callable]:
     #     """
     #     Initialize middleware: currently, testing what works best.
