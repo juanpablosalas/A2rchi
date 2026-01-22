@@ -19,8 +19,24 @@ async def initialize_mcp_client() -> Tuple[MultiServerMCPClient, List[BaseTool]]
 
     config = load_config()
     mcp_servers = config["a2rchi"]["mcp_servers"] or {}
-    client = MultiServerMCPClient(mcp_servers)
+    active_servers = {}
+    failed_servers = {}
+    all_tools = []
 
-    tools = await client.get_tools()
+    for name, server_cfg in mcp_servers.items():
+        try:
+            client = MultiServerMCPClient({name: server_cfg})
+            tools = await client.get_tools()
 
-    return client, tools
+            active_servers[name] = server_cfg
+            all_tools.extend(tools)
+
+        except Exception as e:
+            failed_servers[name] = str(e)
+
+
+    multi_client = MultiServerMCPClient(active_servers)
+    print(f"Active MCP Servers: {list(active_servers.keys())}")
+    print(f"Failed MCP Servers: {list(failed_servers.keys())}")
+
+    return multi_client, all_tools
