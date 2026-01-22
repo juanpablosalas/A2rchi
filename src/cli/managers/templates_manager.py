@@ -1,6 +1,7 @@
 import copy
 import os
 import shutil
+import socket
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -195,15 +196,27 @@ class TemplateManager:
         prompt_mappings: Dict[str, Dict[str, str]] = {}
         for config in configs:
             name = config["name"]
+            config_path = config.get("_config_path")
+            config_dir = Path(config_path).expanduser().parent if config_path else None
             pipeline_names = config.get("a2rchi", {}).get("pipelines") or []
             for pipeline_name in pipeline_names:
                 pipeline_config = config.get("a2rchi", {}).get("pipeline_map", {}).get(pipeline_name, {})
                 prompts_config = pipeline_config.get("prompts", {})
-                prompt_mappings[name] = self._copy_pipeline_prompts(context.base_dir, prompts_config)
+                prompt_mappings[name] = self._copy_pipeline_prompts(
+                    context.base_dir,
+                    prompts_config,
+                    config_dir=config_dir,
+                )
 
         return prompt_mappings
 
-    def _copy_pipeline_prompts(self, base_dir: Path, prompts_config: Dict[str, Any]) -> Dict[str, str]:
+    def _copy_pipeline_prompts(
+        self,
+        base_dir: Path,
+        prompts_config: Dict[str, Any],
+        *,
+        config_dir: Optional[Path] = None,
+    ) -> Dict[str, str]:
         prompt_mappings: Dict[str, str] = {}
 
         for _, section_prompts in prompts_config.items():
@@ -215,6 +228,10 @@ class TemplateManager:
                     continue
 
                 source_path = Path(prompt_path).expanduser()
+                if not source_path.is_absolute() and config_dir:
+                    # Prefer config-relative paths but fall back to CWD if it already exists.
+                    if not source_path.exists():
+                        source_path = (config_dir / source_path).resolve()
                 if not source_path.exists():
                     logger.warning(f"Prompt file not found: {prompt_path}")
                     continue
@@ -347,7 +364,10 @@ class TemplateManager:
 
     def _render_compose_file(self, context: TemplateContext) -> None:
         template_vars = context.plan.to_template_vars()
-        template_vars.update(self._extract_port_config(context))
+        port_config = self._extract_port_config(context)
+        allow_port_reuse = context.get_option("allow_port_reuse", False)
+        self._check_ports_available(context, port_config, allow_port_reuse=allow_port_reuse)
+        template_vars.update(port_config)
         template_vars.setdefault("postgres_port", context.config_manager.config.get("services", {}).get("postgres", {}).get("port", 5432))
 
         template_vars["app_version"] = get_git_version()
@@ -398,6 +418,86 @@ class TemplateManager:
                 port_config[f"{key_prefix}_port_container"] = container_port
 
         return port_config
+
+    def _check_ports_available(self, context: TemplateContext, port_config: Dict[str, Any], *, allow_port_reuse: bool = False) -> None:
+        host_mode = context.plan.host_mode
+        enabled_services = context.plan.get_enabled_services()
+        base_config = (context.config_manager.get_configs() or [{}])[0]
+        services_cfg = base_config.get("services", {}) if isinstance(base_config, dict) else {}
+
+        port_usages: List[tuple[int, str, Optional[str]]] = []
+        for service_name in enabled_services:
+            if service_name not in self.registry.get_all_services():
+                continue
+            key_prefix = service_name.replace("-", "_")
+            host_port = port_config.get(f"{key_prefix}_port_host")
+            if host_port is None:
+                continue
+            service_def = self.registry.get_service(service_name)
+            config_hint = self._service_port_config_hint(service_def, host_mode)
+            port_usages.append(
+                (self._normalize_port(host_port, service_name, config_hint), service_name, config_hint)
+            )
+
+        if host_mode and context.plan.get_service("postgres").enabled:
+            postgres_port = services_cfg.get("postgres", {}).get("port", 5432)
+            port_usages.append(
+                (self._normalize_port(postgres_port, "postgres", "services.postgres.port"), "postgres", "services.postgres.port")
+            )
+
+        if not port_usages:
+            return
+
+        port_to_services: Dict[int, List[tuple[str, Optional[str]]]] = {}
+        for port, service_name, config_hint in port_usages:
+            port_to_services.setdefault(port, []).append((service_name, config_hint))
+
+        errors: List[str] = []
+        for port, services in sorted(port_to_services.items()):
+            if len(services) > 1:
+                details = ", ".join(
+                    f"{service} ({hint})" if hint else service for service, hint in services
+                )
+                errors.append(f"Port {port} is assigned to multiple services: {details}")
+
+        if not allow_port_reuse:
+            for port, services in sorted(port_to_services.items()):
+                error = self._probe_port(port)
+                if error:
+                    details = ", ".join(
+                        f"{service} ({hint})" if hint else service for service, hint in services
+                    )
+                    errors.append(f"Port {port} is already in use ({details}): {error}")
+
+        if errors:
+            raise ValueError("Port check failed:\n" + "\n".join(errors))
+
+    def _service_port_config_hint(self, service_def, host_mode: bool) -> Optional[str]:
+        if not service_def.port_config_path:
+            return None
+        suffix = "port" if host_mode else "external_port"
+        return f"{service_def.port_config_path}.{suffix}"
+
+    def _normalize_port(self, port: Any, service_name: str, config_hint: Optional[str]) -> int:
+        try:
+            port_value = int(port)
+        except (TypeError, ValueError):
+            location = f" ({config_hint})" if config_hint else ""
+            raise ValueError(f"Invalid port value '{port}' for {service_name}{location}")
+
+        if port_value < 1 or port_value > 65535:
+            location = f" ({config_hint})" if config_hint else ""
+            raise ValueError(f"Port out of range for {service_name}{location}: {port_value}")
+
+        return port_value
+
+    def _probe_port(self, port: int) -> Optional[str]:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            try:
+                sock.bind(("0.0.0.0", port))
+            except OSError as exc:
+                return str(exc)
+        return None
 
     def _get_grader_rubrics(self, config_manager) -> List[str]:
         a2rchi_config = config_manager.get_configs()[0]

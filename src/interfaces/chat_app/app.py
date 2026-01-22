@@ -353,10 +353,12 @@ class ChatWrapper:
         display_name = metadata.get("display_name")
         if isinstance(display_name, str) and display_name.strip():
             return display_name.strip()
-        else:
-            logger.error("display_name is not a valid non-empty string in metadata")
-            logger.error(f"Metadata content: {metadata}")
-            return None
+        file_name = metadata.get("file_name")
+        if isinstance(file_name, str) and file_name.strip():
+            return file_name.strip()
+        logger.error("display_name or file_name is not a valid non-empty string in metadata")
+        logger.error(f"Metadata content: {metadata}")
+        return None
 
     @staticmethod
     def _get_title(metadata: dict) -> str | None:
@@ -818,7 +820,7 @@ class ChatWrapper:
                 {
                     "type": "step",
                     "step_type": "agent",
-                    "content": self._truncate_text(content, max_chars),
+                    "content": content,
                     "conversation_id": conversation_id,
                 }
             )
@@ -957,7 +959,6 @@ class ChatWrapper:
         timestamps = self._init_timestamps()
         context = None
         last_output = None
-        pending_agent_event = None
 
         try:
             context, error_code = self._prepare_chat_context(
@@ -987,9 +988,6 @@ class ChatWrapper:
                 last_output = output
                 if getattr(output, "final", False):
                     continue
-                if pending_agent_event:
-                    yield pending_agent_event
-                    pending_agent_event = None
                 for event in self._stream_events_from_output(
                     output,
                     include_agent_steps=include_agent_steps,
@@ -997,22 +995,13 @@ class ChatWrapper:
                     conversation_id=context.conversation_id,
                     max_chars=max_step_chars,
                 ):
-                    if event.get("step_type") == "agent":
-                        pending_agent_event = event
-                    else:
-                        yield event
+                    yield event
 
             timestamps["chain_finished_ts"] = datetime.now()
 
             if last_output is None:
                 yield {"type": "error", "status": 500, "message": "server error; see chat logs for message"}
                 return
-            if pending_agent_event:
-                final_preview = self._truncate_text(last_output["answer"] or "", max_step_chars)
-                if pending_agent_event.get("content") != final_preview:
-                    yield pending_agent_event
-                pending_agent_event = None
-
             # keep track of total number of queries and log this amount
             self.number_of_queries += 1
             logger.info(f"Number of queries is: {self.number_of_queries}")
@@ -1541,7 +1530,6 @@ class FlaskAppWrapper(object):
                 include_agent_steps=include_agent_steps,
                 include_tool_steps=include_tool_steps,
             ):
-                logger.debug(f"\n\n\nStreaming event\n\n\n")
                 yield json.dumps(event, default=str) + "\n"
 
         headers = {

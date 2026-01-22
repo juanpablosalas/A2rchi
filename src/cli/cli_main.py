@@ -1,9 +1,10 @@
 import os
 import traceback
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import click
+import yaml
 from jinja2 import (ChainableUndefined, Environment, PackageLoader,
                     select_autoescape)
 
@@ -15,6 +16,13 @@ from src.cli.managers.volume_manager import VolumeManager
 from src.cli.service_registry import service_registry
 from src.cli.source_registry import source_registry
 from src.cli.utils.helpers import *
+from src.cli.utils.helpers import (
+    _infer_gpu_ids_from_compose,
+    _infer_host_mode_from_compose,
+    _infer_tag_from_compose,
+    _load_rendered_configs,
+    _validate_non_chatbot_sections,
+)
 from src.cli.utils.service_builder import ServiceBuilder
 from src.utils.logging import get_logger, setup_cli_logging
 
@@ -59,6 +67,8 @@ def create(name: str, config_files: list, config_dir: str, env_file: str, servic
     print("Starting A2RCHI deployment process...")
     setup_cli_logging(verbosity=verbosity)
     logger = get_logger(__name__)
+
+    warn_if_template_mismatch()
     
     # Check if Docker is available when --podman is not specified
     if not other_flags.get('podman', False) and not check_docker_available():
@@ -245,6 +255,142 @@ def delete(name: str, rmi: bool, rmv: bool, keep_files: bool, list_deployments: 
     except Exception as e:
         traceback.print_exc()
         raise click.ClickException(str(e))
+
+@click.command()
+@click.option('--name', '-n', type=str, required=True, help="Name of the a2rchi deployment")
+@click.option('--service', '-s', type=str, default="chatbot", help="Service to restart (default: chatbot)")
+@click.option('--config', '-c', 'config_files', type=str, multiple=True, help="Path to .yaml a2rchi configuration")
+@click.option('--config-dir', '-cd', 'config_dir', type=str, help="Path to configs directory")
+@click.option('--env-file', '-e', type=str, required=False, help="Path to .env file with secrets")
+@click.option('--no-build', is_flag=True, help="Restart without rebuilding the image")
+@click.option('--with-deps', is_flag=True, help="Also restart dependent services")
+@click.option('--podman', '-p', is_flag=True, default=False, help="specify if podman is being used")
+@click.option('--verbosity', '-v', type=int, default=3, help="Logging verbosity level (0-4)")
+def restart(
+    name: str,
+    service: str,
+    config_files: tuple,
+    config_dir: Optional[str],
+    env_file: Optional[str],
+    no_build: bool,
+    with_deps: bool,
+    podman: bool,
+    verbosity: int,
+):
+    """Restart a specific service in an existing deployment while reusing its configured ports."""
+    setup_cli_logging(verbosity=verbosity)
+
+    if not podman and not check_docker_available():
+        raise click.ClickException(
+            "Docker is not available on this system. "
+            "Please install Docker or use the '--podman' option to use Podman instead.\n"
+            "Example: a2rchi restart --name mybot --podman ..."
+        )
+
+    deployment_dir = Path(A2RCHI_DIR) / f"a2rchi-{name}"
+    compose_file = deployment_dir / "compose.yaml"
+    if not compose_file.exists():
+        raise click.ClickException(
+            f"Deployment '{name}' not found at {deployment_dir}. "
+            "Use 'a2rchi list-deployments' to see available deployments."
+        )
+
+    try:
+        with open(compose_file, 'r') as f:
+            compose_data = yaml.safe_load(f) or {}
+        services = compose_data.get("services", {})
+    except Exception as e:
+        raise click.ClickException(f"Failed to read compose file: {e}")
+
+    if service not in services:
+        available = ", ".join(sorted(services.keys()))
+        raise click.ClickException(
+            f"Service '{service}' not found in deployment '{name}'. "
+            f"Available services: {available}"
+        )
+
+    if config_files or config_dir:
+        if not (bool(config_files) ^ bool(config_dir)):
+            raise click.ClickException("Must specify only one of config files or config dir")
+
+        if config_dir:
+            config_path = Path(config_dir)
+            config_files = tuple(item for item in config_path.iterdir() if item.is_file())
+
+        configs_dir = deployment_dir / "configs"
+        current_configs = _load_rendered_configs(configs_dir)
+        if not current_configs:
+            raise click.ClickException(f"No rendered configs found at {configs_dir}")
+
+        enabled_services = [
+            name for name in services.keys() if name in service_registry.get_all_services()
+        ]
+        host_mode = _infer_host_mode_from_compose(compose_data)
+        gpu_ids = _infer_gpu_ids_from_compose(compose_data)
+        tag = _infer_tag_from_compose(compose_data)
+        existing_secrets = set((compose_data.get("secrets") or {}).keys())
+
+        config_manager = ConfigurationManager(list(config_files), env)
+        enabled_sources = config_manager.get_enabled_sources()
+        config_disabled_sources = config_manager.get_disabled_sources()
+        enabled_sources = [src for src in enabled_sources if src not in config_disabled_sources]
+        enabled_sources = source_registry.resolve_dependencies(enabled_sources)
+
+        config_manager.validate_configs(enabled_services, enabled_sources)
+
+        _validate_non_chatbot_sections(
+            current_configs,
+            config_manager.get_configs(),
+            host_mode=host_mode,
+            verbosity=verbosity,
+            env=env,
+        )
+
+        secrets_manager = None
+        all_secrets = existing_secrets
+        if env_file:
+            secrets_manager = SecretsManager(env_file, config_manager)
+            required_secrets, all_secrets = secrets_manager.get_secrets(set(enabled_services), set(enabled_sources))
+            secrets_manager.validate_secrets(required_secrets)
+            secrets_manager.write_secrets_to_files(deployment_dir, all_secrets)
+        elif "grafana" in enabled_services:
+            raise click.ClickException(
+                "Grafana is enabled for this deployment. Please provide --env-file so "
+                "Grafana assets can be rendered."
+            )
+        else:
+            secrets_manager = SecretsManager(None, config_manager)
+
+        compose_config = ServiceBuilder.build_compose_config(
+            name=name,
+            verbosity=verbosity,
+            base_dir=deployment_dir,
+            enabled_services=enabled_services,
+            enabled_sources=enabled_sources,
+            secrets=all_secrets,
+            podman=podman,
+            gpu_ids=gpu_ids,
+            host_mode=host_mode,
+            tag=tag,
+        )
+
+        template_manager = TemplateManager(env)
+        template_manager.prepare_deployment_files(
+            compose_config,
+            config_manager,
+            secrets_manager,
+            host_mode=host_mode,
+            allow_port_reuse=True,
+        )
+
+    deployment_manager = DeploymentManager(use_podman=podman)
+    deployment_manager.restart_service(
+        deployment_dir=deployment_dir,
+        service_name=service,
+        build=not no_build,
+        no_deps=not with_deps,
+        force_recreate=True
+    )
     
 @click.command()
 def list_services():
@@ -422,6 +568,7 @@ def main():
     # cli.add_command(help)
     cli.add_command(create)
     cli.add_command(delete)
+    cli.add_command(restart)
     cli.add_command(list_services)
     cli.add_command(list_deployments)
     cli.add_command(evaluate)

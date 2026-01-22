@@ -7,6 +7,7 @@ from src.data_manager.collectors.tickets.ticket_manager import TicketManager
 from src.data_manager.collectors.localfile_manager import LocalFileManager
 from src.data_manager.vectorstore.manager import VectorStoreManager
 from src.utils.config_loader import load_config
+from src.utils.env import read_secret
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,7 +23,11 @@ class DataManager():
 
         os.makedirs(self.data_path, exist_ok=True)
 
-        self.persistence = PersistenceService(self.data_path)
+        self.pg_config = {
+            "password": read_secret("PG_PASSWORD"),
+            **self.config["services"]["postgres"],
+        }
+        self.persistence = PersistenceService(self.data_path, pg_config=self.pg_config)
 
         self.localfile_manager = LocalFileManager(dm_config=self.config["data_manager"])
         self.scraper_manager = ScraperManager(dm_config=self.config["data_manager"])
@@ -32,6 +37,7 @@ class DataManager():
             config=self.config,
             global_config=self.global_config,
             data_path=self.data_path,
+            pg_config=self.pg_config,
         )
 
         self.collection_name = self.vector_manager.collection_name

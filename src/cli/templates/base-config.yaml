@@ -21,8 +21,8 @@ services:
       {%- endfor %}
     mode_settings:
       sources_settings:
-        default_match_field: {{ services.benchmarking.mode_settings.sources_settings.default_match_field | default("display_name", true) }} # matadata field to check for source matching
-      ragas_settings:
+        default_match_field: {{ services.benchmarking.mode_settings.sources_settings.default_match_field | default("file_name", true) }} # metadata field to check for source matching
+      ragas_settings: 
         enabled_metrics:
           {%- for metric in services.benchmarking.ragas_settings.enabled_metrics | default(["answer_relevancy", "faithfulness", "context_precision", "context_recall"]) %}
           - {{ metric }}
@@ -112,7 +112,7 @@ services:
     flask_debug_mode: {{ services.grader_app.flask_debug_mode | default(true, false) }}
   chromadb:
     use_HTTP_chromadb_client: {{ services.chromadb.use_HTTP_chromadb_client | default(true, true) }}
-    chromadb_host: {{ 'localhost' if host_mode else (services.chromadb.host | default('chromadb', true)) }}
+    host: {{ 'localhost' if host_mode else (services.chromadb.host | default('chromadb', true)) }}
     port: {{ services.chromadb.port | default(8000, true) }}
     external_port: {{ services.chromadb.external_port | default(8000, true) }}
     local_vstore_path: "{{ services.chromadb.local_vstore_path | default('/root/data/vstore/', true) }}"
@@ -266,6 +266,7 @@ a2rchi:
         required:
           image_processing_model: {{ a2rchi.pipeline_map.ImageProcessingPipeline.models.required.image_processing_model | default('HuggingFaceImageLLM', true) }}
     CMSCompOpsAgent:
+      recursion_limit: {{ a2rchi.pipeline_map.CMSCompOpsAgent.recursion_limit | default(100, true) }}
       prompts:
         required:
           agent_prompt: {% if a2rchi.pipeline_map.CMSCompOpsAgent.prompts.required.agent_prompt %}"{{ a2rchi.pipeline_map.CMSCompOpsAgent.prompts.required.agent_prompt }}"{% else %}null{% endif %}

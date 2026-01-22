@@ -42,6 +42,9 @@ class ConfigurationManager:
         if not config:
             raise ValueError("Configuration file is empty or invalid")
 
+        # Track origin for relative-path resolution (e.g., prompts).
+        config["_config_path"] = str(config_filepath)
+
         return config
     
     def _append(self,config):

@@ -85,6 +85,48 @@ class DeploymentManager:
                 
         except subprocess.SubprocessError as e:
             raise DeploymentError(f"Failed to stop deployment: {e}", getattr(e, 'returncode', 1))
+
+    def restart_service(self, deployment_dir: Path, service_name: str, build: bool = True,
+                        no_deps: bool = True, force_recreate: bool = True) -> None:
+        """Restart a specific service using compose"""
+        compose_file = deployment_dir / "compose.yaml"
+
+        if not compose_file.exists():
+            raise FileNotFoundError(f"Compose file not found: {compose_file}")
+
+        logger.info(f"Restarting service '{service_name}'")
+
+        try:
+            self._validate_compose_file(compose_file)
+        except Exception as e:
+            raise DeploymentError(f"Invalid compose file: {e}", 1)
+
+        flags = []
+        if no_deps:
+            flags.append("--no-deps")
+        if build:
+            flags.append("--build")
+        if force_recreate:
+            flags.append("--force-recreate")
+
+        flags_str = " ".join(flags)
+        compose_cmd = f"{self.compose_tool} -f {compose_file} up -d {flags_str} {service_name}".strip()
+
+        try:
+            stdout, stderr, exit_code = CommandRunner.run_streaming(compose_cmd, cwd=deployment_dir)
+
+            if exit_code != 0:
+                error_msg = f"Restart failed with exit code {exit_code}"
+                if stderr.strip():
+                    error_msg += f"\nError output:\n{stderr}"
+                raise DeploymentError(error_msg, exit_code, stderr)
+
+            logger.info(f"Service '{service_name}' restarted successfully")
+        except KeyboardInterrupt:
+            logger.warning("Restart interrupted by user")
+            raise
+        except subprocess.SubprocessError as e:
+            raise DeploymentError(f"Failed to restart service: {e}", getattr(e, 'returncode', 1))
     
     def delete_deployment(self, deployment_name: str, remove_images: bool = False, 
                          remove_volumes: bool = False, remove_files: bool = True) -> None:
@@ -127,7 +169,7 @@ class DeploymentManager:
                 except Exception as e:
                     logger.warning(f"Could not remove deployment directory: {e}")
         else:
-            logger.info(f"Deployment directory does not exist: {deployment_dir}")
+            logger.info(f"Deployment directory does not exist: {deployment_dir}. Cannot take down deployment.")
     
     def _validate_compose_file(self, compose_file: Path) -> None:
         """Validate compose file syntax"""

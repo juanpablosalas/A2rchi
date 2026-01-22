@@ -11,6 +11,7 @@ from src.utils.logging import get_logger
 from src.a2rchi.pipelines.agents.base_react import BaseReActAgent
 from src.data_manager.vectorstore.retrievers import HybridRetriever
 from src.a2rchi.pipelines.agents.tools import (
+    create_document_fetch_tool,
     create_file_search_tool,
     create_metadata_search_tool,
     create_retriever_tool,
@@ -47,9 +48,9 @@ class CMSCompOpsAgent(BaseReActAgent):
         file_search_tool = create_file_search_tool(
             self.catalog_service,
             description= (
-                "Scan raw file contents for an exact regex match. Provide a distinctive snippet or error message exactly "
-                "as it appears in the file (escape regex metacharacters if needed) so the matcher can zero in on the right lines."
-                "Returns the matching files and their metadata."
+                "Grep-like search over file contents. Provide a distinctive phrase or regex; optionally use regex=true, "
+                "case_sensitive=true, and context (before/after). Returns matching lines with hashes; "
+                "use fetch_catalog_document for full text."
             ),
             store_docs=self._store_documents,
         )
@@ -57,20 +58,21 @@ class CMSCompOpsAgent(BaseReActAgent):
             self.catalog_service,
             description=(
                 "Query the files' metadata catalog (ticket IDs, source URLs, resource types, etc.). "
-                "Supply the specific identifier or keyword you expect to find in metadata."
-                "Returns the matching files and their metadata."
-                "Example metadata:"
-                "{created_at: 2023-03-08T11:43:18.000+0100"
-                "display_name: https://its.cern.ch/jira/browse/CMSTRANSF-527"
-                "project: CMSTRANSF"
-                "source_type: jira"
-                "ticket_id: CMSTRANSF-527"
-                "url: https://its.cern.ch/jira/browse/CMSTRANSF-527}"
+                "Supports key:value filters and OR (e.g., source_type:git OR url:https://... ticket_id:CMS-123). "
+                "Returns matching files with metadata; use fetch_catalog_document to pull full text."
             ),
             store_docs=self._store_documents,
         )
+        
+        fetch_tool = create_document_fetch_tool(
+            self.catalog_service,
+            description=(
+                "Fetch full document text by resource hash after a search hit. "
+                "Use this sparingly to pull only the most relevant files."
+            ),
+        )
 
-        all_tools = [file_search_tool, metadata_search_tool]
+        all_tools = [file_search_tool, metadata_search_tool, fetch_tool]
 
         try:
             nest_asyncio.apply()
@@ -100,7 +102,7 @@ class CMSCompOpsAgent(BaseReActAgent):
             logger.error(f"Failed to load MCP tools: {e}", exc_info=True)
 
         return all_tools
-
+    
     # def _build_static_middleware(self) -> List[Callable]:
     #     """
     #     Initialize middleware: currently, testing what works best.

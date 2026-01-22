@@ -78,7 +78,12 @@ def create_retriever_tool(
 
     tool_description = (
         description
-        or "Use this tool to search the indexed knowledge base and return the most relevant passages."
+        or (
+            "Search the indexed knowledge base for relevant passages.\n"
+            "Input: query string.\n"
+            "Output: ranked snippets with source filename, resource hash, and score.\n"
+            "Example input: \"transfer errors in CMS\"."
+        )
     )
 
     @tool(name, description=tool_description)
@@ -90,4 +95,3 @@ def create_retriever_tool(
         return _format_documents_for_llm(docs, max_documents=max_documents, max_chars=max_chars)
 
     return _retriever_tool
-

@@ -56,7 +56,7 @@ class RedmineAIWrapper:
     def prepare_context_for_storage(self, source_documents):
         
         # load the present list of sources
-        sources = CatalogService.load_sources_catalog(self.data_path)
+        sources = CatalogService.load_sources_catalog(self.data_path, self.pg_config)
 
         num_retrieved_docs = len(source_documents)
         context = ""
