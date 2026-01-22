@@ -365,7 +365,8 @@ class TemplateManager:
     def _render_compose_file(self, context: TemplateContext) -> None:
         template_vars = context.plan.to_template_vars()
         port_config = self._extract_port_config(context)
-        self._check_ports_available(context, port_config)
+        allow_port_reuse = context.get_option("allow_port_reuse", False)
+        self._check_ports_available(context, port_config, allow_port_reuse=allow_port_reuse)
         template_vars.update(port_config)
         template_vars.setdefault("postgres_port", context.config_manager.config.get("services", {}).get("postgres", {}).get("port", 5432))
 
@@ -418,7 +419,7 @@ class TemplateManager:
 
         return port_config
 
-    def _check_ports_available(self, context: TemplateContext, port_config: Dict[str, Any]) -> None:
+    def _check_ports_available(self, context: TemplateContext, port_config: Dict[str, Any], *, allow_port_reuse: bool = False) -> None:
         host_mode = context.plan.host_mode
         enabled_services = context.plan.get_enabled_services()
         base_config = (context.config_manager.get_configs() or [{}])[0]
@@ -459,13 +460,14 @@ class TemplateManager:
                 )
                 errors.append(f"Port {port} is assigned to multiple services: {details}")
 
-        for port, services in sorted(port_to_services.items()):
-            error = self._probe_port(port)
-            if error:
-                details = ", ".join(
-                    f"{service} ({hint})" if hint else service for service, hint in services
-                )
-                errors.append(f"Port {port} is already in use ({details}): {error}")
+        if not allow_port_reuse:
+            for port, services in sorted(port_to_services.items()):
+                error = self._probe_port(port)
+                if error:
+                    details = ", ".join(
+                        f"{service} ({hint})" if hint else service for service, hint in services
+                    )
+                    errors.append(f"Port {port} is already in use ({details}): {error}")
 
         if errors:
             raise ValueError("Port check failed:\n" + "\n".join(errors))
