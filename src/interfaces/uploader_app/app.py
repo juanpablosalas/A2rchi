@@ -39,17 +39,22 @@ class FlaskAppWrapper:
         self.app = app
         self.config = load_config()
         self.global_config = self.config["global"]
+        self.services_config = self.config["services"]
 
         self.data_path = self.global_config["DATA_PATH"]
-        self.persistence = PersistenceService(self.data_path)
-        self.catalog = CatalogService(self.data_path)
+        self.pg_config = {
+            "password": read_secret("PG_PASSWORD"),
+            **self.services_config["postgres"],
+        }
+        self.persistence = PersistenceService(self.data_path, pg_config=self.pg_config)
+        self.catalog = CatalogService(self.data_path, pg_config=self.pg_config)
         self.status_file = status_file or (Path(self.data_path) / "ingestion_status.json")
 
         secret_key = read_secret("FLASK_UPLOADER_APP_SECRET_KEY") or secrets.token_hex(32)
         self.app.secret_key = secret_key
         self.app.config["SESSION_COOKIE_NAME"] = "uploader_session"
 
-        self.auth_config = (self.config.get("services", {}) or {}).get("data_manager", {}).get("auth", {}) or {}
+        self.auth_config = (self.services_config or {}).get("data_manager", {}).get("auth", {}) or {}
         self.auth_enabled = bool(self.auth_config.get("enabled", True))
         self.api_token = (read_secret("DM_API_TOKEN") or "").strip() or None
         self.admin_users = {

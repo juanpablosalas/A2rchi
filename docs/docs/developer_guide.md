@@ -70,7 +70,8 @@ podman push a2rchi/<image-name>:<tag>
 
 A2RCHI ingests content through **sources** which are collected by **collectors** (`data_manager/collectors`).
 These documents are written to persistent, local files via the `PersistenceService`, which uses `Resource` objects as an abstraction for different content types, and `ResourceMetadata` for associated metadata.
-A catalog of persisted files is maintained in `index.yaml` and `metadata_index.yaml`.
+A catalog of persisted files and metadata is maintained in Postgres via
+`CatalogService` (table: `resources`).
 Finally, the `VectorStoreManager` reads these files, splits them into chunks, generates embeddings, and indexes them in ChromaDB.
 
 ### Resources and `BaseResource`
@@ -84,7 +85,7 @@ Every collected artifact from the collectors is represented as a subclass of `Ba
 Resources may optionally override:
 
 - `get_metadata()`: returns a metadata object (typically `ResourceMetadata`) describing the item. Keys should be serialisable strings and are flattened into the vector store metadata.
-- `get_metadata_path()`: inherited helper that derives a `.meta.yaml` path when metadata is present.
+- `get_metadata_path()`: legacy helper for `.meta.yaml` paths (metadata is now stored in Postgres).
 
 `ResourceMetadata` (`src/data_manager/collectors/utils/metadata.py`) enforces a required `file_name` and normalises the `extra` dictionary so all values become strings. Optional UI labels like `display_name` live in `extra`, alongside source-specific information such as URLs, ticket identifiers, or visibility flags.
 
@@ -92,27 +93,31 @@ The guiding philosophy is that **resources describe content**, but never write t
 
 ### Persistence Service
 
-`PersistenceService` (`src/data_manager/collectors/persistence.py`) centralises all filesystem writes for both the document content, and its metadata. When `persist_resource()` is called it:
+`PersistenceService` (`src/data_manager/collectors/persistence.py`) centralises all filesystem writes for document content and metadata catalog updates. When `persist_resource()` is called it:
 
 1. Resolves the target path under the configured `DATA_PATH`.
 2. Validates and writes the resource content (rejecting empty payloads or unknown types).
-3. Serialises metadata, if provided, to an adjacent `*.meta.yaml` file.
-4. Updates two catalogs:
-   - `index.yaml`: maps each resource hash to the content file path.
-   - `metadata_index.yaml`: maps resource hashes to the metadata file path.
+3. Normalises metadata (if provided) for storage.
+4. Upserts a row into the Postgres `resources` catalog with file and metadata fields.
 
 Collectors only interact with `PersistenceService`; they should not touch the filesystem directly.
 
 ### Vector Database
 
-The vector store lives under the `data_manager/vectorstore` package. `VectorStoreManager` reads the persistence catalogs and synchronises them with ChromaDB:
+The vector store lives under the `data_manager/vectorstore` package. `VectorStoreManager` reads the Postgres catalog and synchronises it with ChromaDB:
 
-1. Loads the tracked files and metadata hashes from `index.yaml`.
+1. Loads the tracked files and metadata hashes from the Postgres catalog.
 2. Splits documents into chunks, optional stemming, and builds embeddings via the configured model.
 3. Adds chunks to the Chroma collection with flattened metadata (including resource hash, filename, human-readable display fields, and any source-specific extras).
 4. Deletes stale entries when the underlying files disappear or are superseded.
 
 Because the manager defers to the catalog, any resource persisted through `PersistenceService` automatically becomes eligible for indexing—no extra plumbing is required.
+
+### Catalog Verification Checklist
+
+- Confirm the Postgres `resources` table exists and is reachable from the service containers.
+- Ingest or upload a new document and verify a new row appears in `resources`.
+- Verify `VectorStoreManager` can update the collection using the Postgres catalog.
 
 ## Extending the stack
 
@@ -120,4 +125,4 @@ When integrating a new source, create a collector under `data_manager/collectors
 
 When integrating a new collector, ensure that any per-source configuration is encoded in the resource metadata so downstream consumers—such as the chat app—can honour it.
 
-When extending the embedding pipeline or storage schema, keep this flow in mind: collectors produce resources → `PersistenceService` writes files and updates indexes → `VectorStoreManager` promotes the indexed files into Chroma. Keeping responsibilities narrowly scoped makes the ingestion stack easier to reason about and evolve.
+When extending the embedding pipeline or storage schema, keep this flow in mind: collectors produce resources → `PersistenceService` writes files and updates the Postgres catalog → `VectorStoreManager` promotes the indexed files into Chroma. Keeping responsibilities narrowly scoped makes the ingestion stack easier to reason about and evolve.

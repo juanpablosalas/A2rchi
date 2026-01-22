@@ -15,10 +15,11 @@ logger = get_logger(__name__)
 class PersistenceService:
     """Shared filesystem persistence for collected resources."""
 
-    def __init__(self, data_path: Path | str) -> None:
+    def __init__(self, data_path: Path | str, *, pg_config: Dict[str, Any]) -> None:
         self.data_path = Path(data_path)
+        self.pg_config = pg_config
 
-        self.catalog = CatalogService(self.data_path)
+        self.catalog = CatalogService(self.data_path, pg_config=self.pg_config)
 
     def persist_resource(self, resource: "BaseResource", target_dir: Path, overwrite:bool = False) -> Path:
         """
