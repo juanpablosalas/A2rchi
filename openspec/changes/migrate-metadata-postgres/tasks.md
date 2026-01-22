@@ -1,4 +1,4 @@
-?## 1. Implementation
+## 1. Implementation
 - [x] 1.1 Define the Postgres catalog schema and initialization bootstrap.
 - [x] 1.2 Add a Postgres-backed catalog backend and switch CatalogService to it.
 - [x] 1.3 Deprecate the SQLite catalog without migrating existing entries.
