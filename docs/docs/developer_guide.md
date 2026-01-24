@@ -36,7 +36,7 @@ export A2RCHI_DIR=~/.a2rchi
 export DEPLOYMENT_NAME=local-smoke
 export USE_PODMAN=true
 export SMOKE_FORCE_CREATE=true
-export SMOKE_OLLAMA_MODEL=gemma3
+export SMOKE_OLLAMA_MODEL=gpt-oss:latest
 scripts/dev/run_smoke_preview.sh "${DEPLOYMENT_NAME}"
 ```
 

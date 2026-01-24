@@ -52,5 +52,5 @@ a2rchi:
   model_class_map:
     OllamaInterface:
       kwargs:
-        base_model: "gemma3:latest"
+        base_model: "gpt-oss:latest"
         url: "http://localhost:7870"
