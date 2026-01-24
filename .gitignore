@@ -20,5 +20,8 @@ logos/
 docs/site
 setup.sh
 .env
+configs/
 build/
 src/cli/utils/_repository_info.py
+openspec/specs/
+openspec/changes/
