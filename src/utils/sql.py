@@ -87,6 +87,15 @@ VALUES (%s, %s, %s, %s, %s)
 RETURNING conversation_id;
 """
 
+SQL_UPSERT_CONVERSATION_METADATA = """
+INSERT INTO conversation_metadata (
+    conversation_id, title, created_at, last_message_at, client_id, a2rchi_version
+)
+VALUES (%s, %s, %s, %s, %s, %s)
+ON CONFLICT (conversation_id) DO UPDATE
+SET last_message_at = EXCLUDED.last_message_at;
+"""
+
 SQL_UPDATE_CONVERSATION_TIMESTAMP = """
 UPDATE conversation_metadata
 SET last_message_at = %s

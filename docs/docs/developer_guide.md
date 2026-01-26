@@ -77,6 +77,22 @@ export METADATA_SEARCH_QUERY="ppc.mit.edu"
 export VECTORSTORE_QUERY="cms"
 ```
 
+## Postgres Usage Overview
+
+A2RCHI relies on Postgres as the durable metadata store across services. Core usage falls into two buckets:
+
+- **Ingestion catalog**: the `resources` table tracks persisted files and metadata for the data manager catalog (`CatalogService`).
+- **Conversation history**: the `conversation_metadata` and `conversations` tables store chat/session metadata plus message history for interfaces like the chat app and ticketing integrations (e.g., Redmine mailer).
+
+Additional supporting tables store interaction telemetry and feedback:
+
+- `configs` stores serialized configuration snapshots used by services.
+- `feedback` captures like/dislike/comment feedback tied to conversation messages.
+- `timing` tracks per-message latency milestones.
+- `agent_tool_calls` stores tool call inputs/outputs extracted from agent messages.
+
+When extending an interface that writes to `conversations`, make sure a matching `conversation_metadata` row exists (create or update before inserting messages) to satisfy foreign key constraints.
+
 ## DockerHub Images
 
 A2RCHI loads different base images hosted on Docker Hub. The Python base image is used when GPUs are not required; otherwise the PyTorch base image is used. The Dockerfiles for these base images live in `src/cli/templates/dockerfiles/base-X-image`.
