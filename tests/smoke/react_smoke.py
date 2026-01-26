@@ -6,7 +6,7 @@ import sys
 import time
 import uuid
 import requests
-from Typing import Tuple
+from typing import Tuple
 
 def _fail(message: str) -> None:
     print(f"[react-smoke] ERROR: {message}", file=sys.stderr)
