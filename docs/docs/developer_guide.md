@@ -62,8 +62,8 @@ export PGUSER=a2rchi
 export PGPASSWORD=<pg-password>
 export PGDATABASE=a2rchi-db
 export BASE_URL=http://localhost:2786
-export DM_BASE_URL=http://localhost:7871
-export CHROMA_URL=http://localhost:8000
+export DM_BASE_URL=http://localhost:<data-manager-port>  # from your deployment config
+export CHROMA_URL=http://localhost:<chroma-port>       # from your deployment config
 export OLLAMA_URL=http://localhost:11434
 ./tests/smoke/combined_smoke.sh <deployment-name>
 ```
