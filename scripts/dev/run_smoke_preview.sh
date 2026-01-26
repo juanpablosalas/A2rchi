@@ -11,7 +11,8 @@ fi
 
 CONFIG_SRC="${CONFIG_SRC:-tests/pr_preview_config/pr_preview_config.yaml}"
 CONFIG_DEST="${CONFIG_DEST:-configs/ci/ci_config.generated.yaml}"
-ENV_FILE="${ENV_FILE:-.env_tmp_smoke}"
+DEFAULT_ENV_FILE=".env_tmp_smoke"
+ENV_FILE="${ENV_FILE:-${DEFAULT_ENV_FILE}}"
 EXTRA_ENV="${EXTRA_ENV:-}"
 SERVICES="${SERVICES:-chatbot}"
 HOSTMODE="${HOSTMODE:-true}"
@@ -169,16 +170,22 @@ if [[ -d "${DEPLOYMENT_DIR}" ]]; then
   fi
 fi
 
-info "Creating .env file with random PG password..."
-if [[ ! -f "${ENV_FILE}" ]]; then
+if [[ "${ENV_FILE}" == "${DEFAULT_ENV_FILE}" ]]; then
+  info "Creating .env file with random PG password..."
   ENV_FILE_CREATED=1
+  : > "${ENV_FILE}"
+  echo "PG_PASSWORD=$(openssl rand -base64 32)" >> "${ENV_FILE}"
+  if [[ -z "${DM_API_TOKEN:-}" ]]; then
+    DM_API_TOKEN="smoke-$(openssl rand -hex 16)"
+  fi
+  echo "DM_API_TOKEN=${DM_API_TOKEN}" >> "${ENV_FILE}"
+  export DM_API_TOKEN
+else
+  info "Using existing env file ${ENV_FILE}; leaving it unchanged."
+  if [[ -n "${DM_API_TOKEN:-}" ]]; then
+    export DM_API_TOKEN
+  fi
 fi
-echo "PG_PASSWORD=$(openssl rand -base64 32)" >> "${ENV_FILE}"
-if [[ -z "${DM_API_TOKEN:-}" ]]; then
-  DM_API_TOKEN="smoke-$(openssl rand -hex 16)"
-fi
-echo "DM_API_TOKEN=${DM_API_TOKEN}" >> "${ENV_FILE}"
-export DM_API_TOKEN
 if [[ -z "${DM_CATALOG_SEED_FILE:-}" ]]; then
   DM_CATALOG_SEED_FILE="$(pwd)/tests/smoke/seed.txt"
   export DM_CATALOG_SEED_FILE

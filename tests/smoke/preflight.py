@@ -87,7 +87,7 @@ def _wait_for_ingestion() -> None:
             if state == "error":
                 _fail(f"Ingestion failed: {payload.get('error')}")
         except Exception as exc:
-            _fail(f"Ingestion status check failed: {exc}")
+            _info(f"Ingestion status check error: {exc}; retrying...")
 
         if time.time() >= deadline:
             _fail("Ingestion did not complete before timeout")
@@ -169,7 +169,7 @@ def _check_data_manager_catalog() -> None:
                     _info("Data-manager catalog OK (metadata search)")
                     return
         except Exception as exc:
-            _fail(f"Data-manager catalog check failed: {exc}")
+            _info(f"Data-manager catalog check error: {exc}; retrying...")
 
         if seed_file and not seeded:
             _info(f"Catalog empty; seeding with {seed_file} ...")
