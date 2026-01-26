@@ -5,9 +5,8 @@ import os
 import sys
 import time
 import uuid
-
 import requests
-
+from Typing import Tuple
 
 def _fail(message: str) -> None:
     print(f"[react-smoke] ERROR: {message}", file=sys.stderr)
@@ -18,7 +17,7 @@ def _info(message: str) -> None:
     print(f"[react-smoke] {message}")
 
 
-def _stream_chat(base_url: str, payload: dict) -> tuple[bool, bool]:
+def _stream_chat(base_url: str, payload: dict) -> Tuple[bool, bool]:
     stream_url = f"{base_url}/api/get_chat_response_stream"
     _info(f"POST {stream_url}")
     tool_call_seen = False

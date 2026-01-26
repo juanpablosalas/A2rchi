@@ -11,7 +11,7 @@ fi
 
 CONFIG_SRC="${CONFIG_SRC:-tests/pr_preview_config/pr_preview_config.yaml}"
 CONFIG_DEST="${CONFIG_DEST:-configs/ci/ci_config.generated.yaml}"
-ENV_FILE="${ENV_FILE:-.env}"
+ENV_FILE="${ENV_FILE:-.env_tmp_smoke}"
 EXTRA_ENV="${EXTRA_ENV:-}"
 SERVICES="${SERVICES:-chatbot}"
 HOSTMODE="${HOSTMODE:-true}"

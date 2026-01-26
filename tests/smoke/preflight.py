@@ -192,7 +192,6 @@ def _check_data_manager_catalog() -> None:
             _fail("Data-manager catalog search returned no hits before timeout")
         _info("Catalog empty, waiting for ingestion...")
         time.sleep(interval)
-    _info("Data-manager catalog OK")
 
 
 def _check_ollama_model() -> None:
