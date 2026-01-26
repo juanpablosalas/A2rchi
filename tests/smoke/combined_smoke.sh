@@ -30,7 +30,8 @@ python3 tests/smoke/preflight.py
 
 info "Running direct tool probes (chatbot container)..."
 tool="docker"
-if [[ "${USE_PODMAN,,}" == "true" ]]; then
+use_podman="${USE_PODMAN:-false}"
+if [[ "${use_podman,,}" == "true" ]]; then
   tool="podman"
 fi
 container_name="chatbot-${NAME}"
