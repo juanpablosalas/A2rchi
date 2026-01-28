@@ -12,11 +12,7 @@ inputs:
   config-destination:
     description: Destination path where the config will be copied.
     required: false
-    default: configs/ci/ci_config.yaml
-  env-file:
-    description: Path to the environment file used for secrets.
-    required: false
-    default: .env
+    default: configs/ci/ci_config.generated.yaml
   extra-env:
     description: Additional environment variables (key=value lines)
     required: false
@@ -62,131 +58,22 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        chmod +x tests/smoke/*.sh
+        chmod +x tests/smoke/*.sh scripts/dev/run_smoke_preview.sh
 
-    - name: Prepare CI config
-      shell: bash
-      env:
-        CONFIG_SRC: ${{ inputs.config-path }}
-        CONFIG_DEST: ${{ inputs.config-destination }}
-      run: |
-        set -euo pipefail
-        mkdir -p "$(dirname "${CONFIG_DEST}")"
-        cp "${CONFIG_SRC}" "${CONFIG_DEST}"
-
-    - name: Create .env file with random PG password
-      shell: bash
-      env:
-        ENV_FILE: ${{ inputs.env-file }}
-      run: |
-        set -euo pipefail
-        echo "PG_PASSWORD=$(openssl rand -base64 32)" >> "${ENV_FILE}"
-
-    - name: Launch deployment
+    - name: Run shared smoke runner
       shell: bash
       env:
         DEPLOYMENT_NAME: ${{ inputs.deployment-name }}
-        EXTRA_ENV: ${{ inputs.extra-env }}
+        CONFIG_SRC: ${{ inputs.config-path }}
         CONFIG_DEST: ${{ inputs.config-destination }}
+        EXTRA_ENV: ${{ inputs.extra-env }}
         SERVICES: ${{ inputs.services }}
         HOSTMODE: ${{ inputs.hostmode }}
-        ENV_FILE: ${{ inputs.env-file }}
-        USE_PODMAN: ${{ inputs.use-podman }}
-      run: |
-        set -euo pipefail
-        if [[ -n "${EXTRA_ENV}" ]]; then
-          while IFS="=" read -r key value; do
-            if [[ -n "${key}" ]]; then
-              export "${key}"="${value}"
-            fi
-          done <<< "${EXTRA_ENV}"
-        fi
-        CMD=(a2rchi create --name "${DEPLOYMENT_NAME}" --config "${CONFIG_DEST}" -v 4 --services "${SERVICES}" --env-file "${ENV_FILE}")
-        if [[ "${USE_PODMAN,,}" == "true" ]]; then
-          CMD+=(--podman)
-        fi
-        if [[ "${HOSTMODE,,}" == "true" ]]; then
-          CMD+=(--hostmode)
-        fi
-        "${CMD[@]}"
-
-    - name: Wait for service readiness
-      shell: bash
-      env:
         WAIT_URL: ${{ inputs.wait-url }}
         WAIT_ATTEMPTS: ${{ inputs.wait-attempts }}
         WAIT_SLEEP: ${{ inputs.wait-sleep-seconds }}
-      run: |
-        set -euo pipefail
-        echo "Waiting for service to be ready..."
-        attempt=0
-        max_attempts=${WAIT_ATTEMPTS}
-        sleep_seconds=${WAIT_SLEEP}
-        while true; do
-          if curl -fsS "${WAIT_URL}" >/dev/null 2>&1; then
-            echo "Service is ready!"
-            break
-          fi
-          attempt=$((attempt + 1))
-          if (( attempt >= max_attempts )); then
-            echo "Service did not become ready in time" >&2
-            exit 1
-          fi
-          echo "Attempt ${attempt}/${max_attempts}..."
-          sleep "${sleep_seconds}"
-        done
-
-    - name: Run smoke tests
-      shell: bash
-      env:
-        DEPLOYMENT_NAME: ${{ inputs.deployment-name }}
-        EXTRA_ENV: ${{ inputs.extra-env }}
         BASE_URL: ${{ inputs.base-url }}
-      run: |
-        set -euo pipefail
-        if [[ -n "${EXTRA_ENV}" ]]; then
-          while IFS="=" read -r key value; do
-            if [[ -n "${key}" ]]; then
-              export "${key}"="${value}"
-            fi
-          done <<< "${EXTRA_ENV}"
-        fi
-        ./tests/smoke/smoke.sh "${DEPLOYMENT_NAME}"
-
-    - name: Dump logs on failure
-      if: failure()
-      shell: bash
-      run: |
-        set -euo pipefail
-        echo "=== Container status ==="
-        docker ps -a
-        echo "=== Container logs ==="
-        docker ps -a --format '{{.Names}}' | xargs -I{} sh -c 'echo "---- {} ----"; docker logs --tail 50 {} || true'
-
-    - name: Cleanup deployment
-      if: always()
-      shell: bash
-      env:
-        DEPLOYMENT_NAME: ${{ inputs.deployment-name }}
-        EXTRA_ENV: ${{ inputs.extra-env }}
-        ENV_FILE: ${{ inputs.env-file }}
-        CONFIG_DEST: ${{ inputs.config-destination }}
         USE_PODMAN: ${{ inputs.use-podman }}
       run: |
-        set +e
-        if [[ -n "${EXTRA_ENV}" ]]; then
-          while IFS="=" read -r key value; do
-            if [[ -n "${key}" ]]; then
-              export "${key}"="${value}"
-            fi
-          done <<< "${EXTRA_ENV}"
-        fi
-        if [[ -n "${DEPLOYMENT_NAME}" ]]; then
-          if [[ "${USE_PODMAN,,}" == "true" ]]; then
-            yes | a2rchi delete --name "${DEPLOYMENT_NAME}" --podman --rmi --rmv || true
-          else
-            a2rchi delete --name "${DEPLOYMENT_NAME}" || true
-          fi
-          sleep 2
-        fi
-        rm -f "${ENV_FILE}"
+        set -euo pipefail
+        ./scripts/dev/run_smoke_preview.sh "${DEPLOYMENT_NAME}"

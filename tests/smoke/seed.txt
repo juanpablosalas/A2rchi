@@ -1,0 +1,3 @@
+Smoke test seed document.
+This file exists to populate the data-manager catalog during CI smoke runs.
+Contains marker text: ppc.mit.edu

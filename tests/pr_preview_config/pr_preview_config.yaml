@@ -4,6 +4,7 @@ services:
   postgres:
     port: 3456
   chat_app:
+    pipeline: CMSCompOpsAgent
     port: 2786
     external_port: 2786
     trained_on: "Dummy data for preview"
@@ -14,6 +15,8 @@ services:
   data_manager:
     port: 4242
     external_port: 4242
+    auth:
+      enabled: false
 
 data_manager:
   embedding_name: HuggingFaceEmbeddings
@@ -31,18 +34,23 @@ data_manager:
   use_hybrid_search: true
   sources:
     links:
-      input_lists:
-        - tests/pr_preview_config/test_links.list
+      enabled: false
+    local_files:
+      paths:
+        - tests/smoke/seed.txt
 
 a2rchi:
-  pipelines: ['QAPipeline']
+  pipelines: ['CMSCompOpsAgent']
   pipeline_map:
-    QAPipeline:
+    CMSCompOpsAgent:
       prompts:
         required:
-          condense_prompt: tests/pr_preview_config/condense.prompt
-          chat_prompt: tests/pr_preview_config/qa.prompt
+          agent_prompt: tests/pr_preview_config/agent.prompt
       models:
         required:
-          condense_model: DumbLLM
-          chat_model: DumbLLM
+          agent_model: OllamaInterface
+  model_class_map:
+    OllamaInterface:
+      kwargs:
+        base_model: "gpt-oss:latest"
+        url: "http://localhost:7870"

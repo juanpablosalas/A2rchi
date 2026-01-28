@@ -102,7 +102,7 @@ jobs:
           deployment-name: release-${{ github.run_id }}
           extra-env: A2RCHI_COMPOSE_UP_FLAGS=--build --pull 
           config-path: tests/pr_preview_config/pr_preview_config.yaml
-          config-destination: configs/ci/ci_config.yaml
+          config-destination: configs/ci/ci_config.generated.yaml
           env-file: .env
           services: chatbot
           hostmode: "true"

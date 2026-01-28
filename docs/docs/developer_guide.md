@@ -27,6 +27,72 @@ mkdocs gh-deploy
 
 Always open a PR to merge documentation changes into `main`. Do not edit files directly in the `gh-pages` branch.
 
+## Smoke Tests
+
+If you want the full CI-like smoke run (create deployment, wait for readiness, run checks, and clean up) you can use the shared runner:
+
+```bash
+export A2RCHI_DIR=~/.a2rchi
+export DEPLOYMENT_NAME=local-smoke
+export USE_PODMAN=true
+export SMOKE_FORCE_CREATE=true
+export SMOKE_OLLAMA_MODEL=gpt-oss:latest
+scripts/dev/run_smoke_preview.sh "${DEPLOYMENT_NAME}"
+```
+
+The shared runner performs these checks in order (ensuring the configured Ollama model is available via `ollama pull` before running the checks):
+
+- Create a deployment from the preview config and wait for the chat app health endpoint.
+- Wait for initial data ingestion to complete (5 minute timeout).
+- Preflight checks: Postgres reachable, ChromaDB responsive, data-manager catalog searchable.
+- Tool probes: catalog tools and vectorstore retriever (executed inside the chatbot container to match the agent runtime).
+- ReAct agent smoke: stream response and observe at least one tool call.
+
+The combined smoke workflow alone does not start A2rchi for you. Start a deployment first, then run the checks (it validates Postgres, ChromaDB, data-manager catalog, Ollama model availability, ReAct streaming, and direct tool probes inside the chatbot container):
+
+```bash
+export A2RCHI_CONFIG_PATH=~/.a2rchi/a2rchi-<deployment-name>/configs/<config-name>.yaml
+export A2RCHI_CONFIG_NAME=<config-name>
+export A2RCHI_PIPELINE_NAME=CMSCompOpsAgent
+export USE_PODMAN=true
+export OLLAMA_MODEL=<ollama-model-name>
+export PGHOST=localhost
+export PGPORT=<postgres-port>
+export PGUSER=a2rchi
+export PGPASSWORD=<pg-password>
+export PGDATABASE=a2rchi-db
+export BASE_URL=http://localhost:2786
+export DM_BASE_URL=http://localhost:<data-manager-port>  # from your deployment config
+export CHROMA_URL=http://localhost:<chroma-port>       # from your deployment config
+export OLLAMA_URL=http://localhost:11434
+./tests/smoke/combined_smoke.sh <deployment-name>
+```
+
+Optional environment variables for deterministic queries:
+
+```bash
+export REACT_SMOKE_PROMPT="Use the search_local_files tool to find ... and summarize."
+export FILE_SEARCH_QUERY="first linux server installation"
+export METADATA_SEARCH_QUERY="ppc.mit.edu"
+export VECTORSTORE_QUERY="cms"
+```
+
+## Postgres Usage Overview
+
+A2RCHI relies on Postgres as the durable metadata store across services. Core usage falls into two buckets:
+
+- **Ingestion catalog**: the `resources` table tracks persisted files and metadata for the data manager catalog (`CatalogService`).
+- **Conversation history**: the `conversation_metadata` and `conversations` tables store chat/session metadata plus message history for interfaces like the chat app and ticketing integrations (e.g., Redmine mailer).
+
+Additional supporting tables store interaction telemetry and feedback:
+
+- `configs` stores serialized configuration snapshots used by services.
+- `feedback` captures like/dislike/comment feedback tied to conversation messages.
+- `timing` tracks per-message latency milestones.
+- `agent_tool_calls` stores tool call inputs/outputs extracted from agent messages.
+
+When extending an interface that writes to `conversations`, make sure a matching `conversation_metadata` row exists (create or update before inserting messages) to satisfy foreign key constraints.
+
 ## DockerHub Images
 
 A2RCHI loads different base images hosted on Docker Hub. The Python base image is used when GPUs are not required; otherwise the PyTorch base image is used. The Dockerfiles for these base images live in `src/cli/templates/dockerfiles/base-X-image`.

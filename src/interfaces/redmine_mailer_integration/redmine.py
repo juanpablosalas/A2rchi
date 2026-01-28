@@ -14,7 +14,7 @@ from src.interfaces.redmine_mailer_integration.utils import sender
 from src.utils.config_loader import load_config
 from src.utils.env import read_secret
 from src.utils.logging import get_logger
-from src.utils.sql import SQL_INSERT_CONVO
+from src.utils.sql import SQL_INSERT_CONVO, SQL_UPSERT_CONVERSATION_METADATA
 
 logger = get_logger(__name__)
 
@@ -74,6 +74,9 @@ class RedmineAIWrapper:
         logger.info("Storing interaction to postgres")
 
         service = "Redmine"
+        conversation_title = f"Redmine issue {issue_id}"
+        client_id = "redmine"
+        version = os.getenv("APP_VERSION", "unknown")
 
         insert_tups = (
             [
@@ -83,7 +86,17 @@ class RedmineAIWrapper:
             ]
         )
 
-        # create connection to database
+        # create or refresh conversation metadata before inserting messages
+        self.conn = psycopg2.connect(**self.pg_config)
+        self.cursor = self.conn.cursor()
+        metadata_tup = (issue_id, conversation_title, ts, ts, client_id, version)
+        self.cursor.execute(SQL_UPSERT_CONVERSATION_METADATA, metadata_tup)
+        self.conn.commit()
+        self.cursor.close()
+        self.conn.close()
+        self.cursor, self.conn = None, None
+
+        # create connection to database for message inserts
         self.conn = psycopg2.connect(**self.pg_config)
         self.cursor = self.conn.cursor()
         psycopg2.extras.execute_values(self.cursor, SQL_INSERT_CONVO, insert_tups)
