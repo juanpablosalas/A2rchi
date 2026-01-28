@@ -1,17 +1,17 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/mit-submit/A2rchi/main/docs/docs/_static/a2rchi_logo.png" width="200" />
+  <img src="https://raw.githubusercontent.com/mit-submit/A2rchi/main/docs/docs/_static/archi-logo.png" width="200" />
 </p>
 
-# A2RCHI - AI Augmented Research Chat Intelligence
+# _archi_ - AI Augmented Research Chat Intelligence
 
 [![CI](https://github.com/mit-submit/A2rchi/actions/workflows/pr-preview.yml/badge.svg)](https://github.com/mit-submit/A2rchi/actions/workflows/pr-preview.yml)
 [![Docs](https://img.shields.io/badge/docs-online-blue)](https://mit-submit.github.io/A2rchi/)
 
-A2RCHI is a retrieval-augmented generation framework for research and education teams who need a low-barrier to entry, configurable, private, and extensible assistant. The system was first developed at MIT for the SubMIT computing project, and now powers chat, ticketing, and course-support workflows across academia and research organizations.
+_archi_ is a retrieval-augmented generation framework for research and education teams who need a low-barrier to entry, configurable, private, and extensible assistant. The system was first developed at MIT for the SubMIT computing project, and now powers chat, ticketing, and course-support workflows across academia and research organizations.
 
 ## Key Capabilities
 
-A2RCHI provides:
+_archi_ provides:
 - Customizable AI pipelines that combine data retrieval and LLMs (and more tools to come!).
 - Data ingestion connectors: web links, git repositories, local files, JIRA, and more.
 - Interfaces: chat app, ticketing assistant, email bot, and more.
@@ -36,8 +36,8 @@ Follow the [Install](https://mit-submit.github.io/A2rchi/install/) and [Quicksta
 
 ## Contributing
 
-We welcome fixes and new integrations—see the [Developer Guide](https://mit-submit.github.io/A2rchi/developer_guide/) for coding standards, testing instructions, and contribution tips. Please open issues or pull requests on the [GitHub repository](https://github.com/mit-submit/A2rchi).
+We welcome fixes and new integrations—see the [Developer Guide](https://mit-submit.github.io/A2rchi/developer_guide/) for coding standards, testing instructions, and contribution tips. Please open issues or pull requests on the [GitHub repository](https://github.com/archi-physics/archi).
 
 ## License and Support
 
-A2RCHI is released under the [MIT License](LICENSE). For project inquiries, contact paus@mit.edu.
+_archi_ is released under the [MIT License](LICENSE). For project inquiries, contact paus@mit.edu.

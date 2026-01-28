@@ -1,14 +1,16 @@
 [project]
-name = "a2rchi"
+name = "archi"
 version = "1.2.4"
-description = "An AI Augmented Research Chat Intelligence (A2rchi)"
+description = "archi: a framework for improving research workflows with AI"
 requires-python = ">=3.7"
 authors = [
     {name="Pietro Lugato", email="pmlugato@mit.edu"},
     {name="Julius Heitkoetter", email="juliush@mit.edu"},
     {name="Tim Kraska", email="kraska@mit.edu"},
     {name="Christoph Paus", email="paus@mit.edu"},
-    {name="Matthew Russo", email="mdrusso@mit.edu"}
+    {name="Matthew Russo", email="mdrusso@mit.edu"},
+    {name="Luca Lavezzo", email="lavezzo@mit.edu"},
+    {name="Jason Mohoney", email="mohoney@mit.edu"}
 ]
 dependencies = [
     "pyyaml==6.0.1",
@@ -27,7 +29,7 @@ dependencies = [
 ]
 
 [project.scripts]
-a2rchi = "src.cli.cli_main:main"
+archi = "src.cli.cli_main:main"
 
 [tool.setuptools.package-data]
 "src.cli" = ["templates/**/*"]
@@ -43,4 +45,4 @@ requires = ["setuptools>=61.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project.urls]
-"Homepage" = "https://github.com/mit-submit/A2rchi"
+"Homepage" = "https://github.com/archi-physics/archi"
