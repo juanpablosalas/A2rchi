@@ -5,6 +5,7 @@ from src.data_manager.collectors.persistence import PersistenceService
 from src.data_manager.collectors.tickets.integrations.jira import JiraClient
 from src.data_manager.collectors.tickets.integrations.redmine_tickets import \
     RedmineClient
+from src.data_manager.collectors.tickets.integrations.snow import ServiceNowClient
 from src.data_manager.collectors.tickets.ticket_resource import TicketResource
 from src.utils.config_access import get_global_config
 from src.utils.logging import get_logger
@@ -22,6 +23,7 @@ class TicketManager:
 
         self.jira_config = sources_config['jira']
         self.redmine_config = sources_config['redmine']
+        self.snow_config = sources_config['snow']
 
         self.jira_client = None
         if self.jira_config['enabled']:
@@ -31,9 +33,14 @@ class TicketManager:
         if self.redmine_config['enabled']:
             self.redmine_client = self._init_client(lambda: RedmineClient(self.redmine_config), "Redmine")
 
+        self.snow_client = None
+        if self.snow_config.get('enabled', False):
+            self.snow_client = self._init_client(lambda: ServiceNowClient(self.snow_config), "ServiceNow")
+
         # cache the projects we have collected
         self.jira_projects = set()
         self.redmine_projects = set()
+        self.snow_projects = set()
 
     def _init_client(self, factory, name: str):
         try:
@@ -52,6 +59,9 @@ class TicketManager:
         if self.redmine_client:
             redmine_projects = self.redmine_config.get("projects", [])
             self.collect_redmine(persistence, projects=redmine_projects)
+        if self.snow_client:
+            snow_projects = self.snow_config.get("projects", [])
+            self.collect_servicenow(persistence, projects=snow_projects)
 
     def collect_jira(
         self,
@@ -77,6 +87,19 @@ class TicketManager:
             persistence=persistence,
             projects=projects or [],
             **kwargs
+        )
+
+    def collect_servicenow(
+        self,
+        persistence: PersistenceService,
+        projects: List[str],
+        kwargs: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._collect_from_client(
+            self.snow_client, "ServiceNow",
+            persistence=persistence,
+            projects=projects or [],
+            **(kwargs or {})
         )
 
     def schedule_collect_jira(
@@ -111,6 +134,22 @@ class TicketManager:
             since_iso=last_run
         )
 
+    def schedule_collect_servicenow(
+        self,
+        persistence: PersistenceService,
+        last_run: Optional[str],
+    ) -> None:
+        """
+        Update all ServiceNow projects with tickets since last run
+        """
+
+        self._collect_from_client(
+            self.snow_client, "ServiceNow",
+            persistence=persistence,
+            projects=self.snow_projects,
+            since_iso=last_run
+        )
+
     def _collect_from_client(
         self,
         client,
@@ -129,6 +168,12 @@ class TicketManager:
             elif name == "Redmine":
                 self.redmine_projects.update(projects)
                 outdir = self.data_path / "redmine"
+            elif name == "ServiceNow":
+                self.snow_projects.update(projects)
+                outdir = self.data_path / "servicenow"
+            else:
+                logger.warning(f"Unknown ticket source: {name}")
+                return
         except Exception as exc:
             logger.warning(
                 f"{name} collection failed; skipping remaining tickets from this source.",

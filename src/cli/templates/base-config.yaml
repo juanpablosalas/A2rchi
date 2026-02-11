@@ -220,6 +220,18 @@ data_manager:
       visible: {{ data_manager.sources.redmine.visible | default(false, true) }}
       schedule: '{{ data_manager.sources.redmine.schedule | default("", true) }}'
       anonymize_data: {{ data_manager.sources.redmine.anonymize_data | default(true, true) }}
+    snow:
+      enabled: {{ data_manager.sources.snow.enabled | default(false, true) }}
+      url: {{ data_manager.sources.snow.url | default('', true) }}
+      visible: {{ data_manager.sources.snow.visible | default(true, true) }}
+      schedule: '{{ data_manager.sources.snow.schedule | default("", true) }}'
+      projects:
+        {%- for project in data_manager.sources.snow.projects | default([], true) %}
+        - {{ project }}
+        {%- endfor %}
+      anonymize_data: {{ data_manager.sources.snow.anonymize_data | default(false, true) }}
+      max_tickets: {{ data_manager.sources.snow.max_tickets | default(1e10, true) }}
+      cutoff_date: {{ data_manager.sources.snow.cutoff_date | default('', true) }}
   utils:
     anonymizer:
         nlp_model: {{ data_manager.utils.anonymizer.nlp_model | default('en_core_web_sm', true) }}
